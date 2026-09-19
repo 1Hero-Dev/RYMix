@@ -1,0 +1,10 @@
+{
+  "name": "Rym - Ahmed Rachedi",
+  "description": "Super-app locale d'Ahmed Rachedi (Wilaya 43 de Mila) : supérettes, repas traditionnels et livraisons express avec paiement à la livraison (COD).",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

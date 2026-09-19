@@ -1,0 +1,216 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role (customer, driver, shop, admin)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "role": { "type": "string", "enum": ["customer", "driver", "shop", "admin"] },
+        "phone": { "type": "string", "maxLength": 32 },
+        "wilaya": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Food & grocery delivery order in Mila 43",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "orderNumber": { "type": "string", "maxLength": 32 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 128 },
+        "customerPhone": { "type": "string", "maxLength": 32 },
+        "storeId": { "type": "string", "maxLength": 64 },
+        "storeName": { "type": "string", "maxLength": 128 },
+        "courierId": { "type": "string", "maxLength": 128 },
+        "courierName": { "type": "string", "maxLength": 128 },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "CONFIRMED", "ACCEPTED", "PREPARING", "READY", "READY_FOR_PICKUP", "ASSIGNED", "PICKED_UP", "DELIVERING", "ARRIVED", "CUSTOMER_CONFIRMED", "DELIVERED", "CANCELLED"]
+        },
+        "itemsTotalDZD": { "type": "number" },
+        "deliveryFeeDZD": { "type": "number" },
+        "discountDZD": { "type": "number" },
+        "totalDZD": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["COD", "EDAHABIA", "CIB", "POINTS"] },
+        "paymentStatus": { "type": "string", "enum": ["UNPAID", "COLLECTED", "PAID", "FAILED", "REFUNDED"] },
+        "proofPhotoUrl": { "type": "string", "maxLength": 512 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "storeId", "status", "totalDZD"]
+    },
+    "DriverLocation": {
+      "title": "DriverLocation",
+      "description": "Real-time GPS telemetry of active couriers",
+      "type": "object",
+      "properties": {
+        "courierId": { "type": "string", "maxLength": 128 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "heading": { "type": "number" },
+        "speed": { "type": "number" },
+        "activeOrderId": { "type": "string", "maxLength": 64 },
+        "isOnline": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courierId", "lat", "lng", "isOnline"]
+    },
+    "MerchantRating": {
+      "title": "MerchantRating",
+      "description": "Customer reviews and multi-criteria ratings for restaurants and shops",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "orderId": { "type": "string", "maxLength": 64 },
+        "storeId": { "type": "string", "maxLength": 64 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 128 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orderId", "storeId", "customerId", "rating"]
+    },
+    "CourierRating": {
+      "title": "CourierRating",
+      "description": "Customer reviews and multi-criteria ratings for delivery riders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "orderId": { "type": "string", "maxLength": 64 },
+        "courierId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 128 },
+        "rating": { "type": "number" },
+        "tipDZD": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orderId", "courierId", "customerId", "rating"]
+    },
+    "LoyaltyAccount": {
+      "title": "LoyaltyAccount",
+      "description": "Customer fidelity points, tier and rewards",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string", "maxLength": 128 },
+        "currentPoints": { "type": "number" },
+        "lifetimePoints": { "type": "number" },
+        "tier": { "type": "string", "enum": ["BRONZE", "SILVER", "GOLD", "PLATINUM"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerId", "currentPoints", "tier"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "System runtime configurations including databaseUrl and realtimeDispatchUrl",
+      "type": "object",
+      "properties": {
+        "databaseUrl": { "type": "string", "maxLength": 512 },
+        "realtimeDispatchUrl": { "type": "string", "maxLength": 512 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Store and restaurant profiles in Ahmed Rachedi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 256 },
+        "landmark": { "type": "string", "maxLength": 128 },
+        "isOpen": { "type": "boolean" },
+        "deliveryFee": { "type": "number" },
+        "minOrder": { "type": "number" },
+        "prepTimeMinutes": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "category", "isOpen"]
+    },
+    "PromoCode": {
+      "title": "PromoCode",
+      "description": "Promotional discount codes for customers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "code": { "type": "string", "maxLength": 32 },
+        "title": { "type": "string", "maxLength": 128 },
+        "discountType": { "type": "string", "enum": ["fixed", "percentage", "free_delivery"] },
+        "discountDZD": { "type": "number" },
+        "minOrderDZD": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "usageCount": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "discountType", "isActive"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Global operational parameters and launch radius for Ahmed Rachedi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "launchRadiusMeters": { "type": "number" },
+        "baseDeliveryFeeDZD": { "type": "number" },
+        "freeDeliveryThresholdDZD": { "type": "number" },
+        "maintenanceMode": { "type": "boolean" },
+        "announcementBanner": { "type": "string", "maxLength": 512 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "launchRadiusMeters"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents keyed by Firebase Auth UID"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Orders placed by customers and tracked by couriers and shops"
+    },
+    "/driverLocations/{courierId}": {
+      "schema": "DriverLocation",
+      "description": "Live GPS location updates per driver"
+    },
+    "/merchantRatings/{ratingId}": {
+      "schema": "MerchantRating",
+      "description": "Store evaluations submitted after delivery"
+    },
+    "/courierRatings/{ratingId}": {
+      "schema": "CourierRating",
+      "description": "Courier evaluations and tips submitted after delivery"
+    },
+    "/loyaltyAccounts/{customerId}": {
+      "schema": "LoyaltyAccount",
+      "description": "Customer loyalty reward points and tier status"
+    },
+    "/systemConfig/{configId}": {
+      "schema": "SystemConfig",
+      "description": "System and dispatch runtime configurations"
+    },
+    "/stores/{storeId}": {
+      "schema": "Store",
+      "description": "Stores and restaurant catalogs managed by admin"
+    },
+    "/promoCodes/{codeId}": {
+      "schema": "PromoCode",
+      "description": "Promotional discount codes managed by admin"
+    },
+    "/systemSettings/{settingId}": {
+      "schema": "SystemSetting",
+      "description": "Platform operational parameters managed by admin"
+    }
+  }
+}

@@ -1,0 +1,184 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'boudehous.charafeddine@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['customer', 'driver', 'shop', 'admin'];
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['id', 'customerId', 'storeId', 'status', 'totalDZD']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.storeId is string && data.storeId.size() <= 64 &&
+             data.status in ['PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'DELIVERING', 'ARRIVED', 'CUSTOMER_CONFIRMED', 'DELIVERED', 'CANCELLED'] &&
+             data.totalDZD is number && data.totalDZD >= 0;
+    }
+
+    function isValidDriverLocation(data) {
+      return data.keys().hasAll(['courierId', 'lat', 'lng', 'isOnline']) &&
+             data.courierId is string && data.courierId.size() <= 128 &&
+             data.lat is number && data.lng is number &&
+             data.isOnline is bool;
+    }
+
+    function isValidMerchantRating(data) {
+      return data.keys().hasAll(['id', 'orderId', 'storeId', 'customerId', 'rating']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.orderId is string && data.orderId.size() <= 64 &&
+             data.storeId is string && data.storeId.size() <= 64 &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5;
+    }
+
+    function isValidCourierRating(data) {
+      return data.keys().hasAll(['id', 'orderId', 'courierId', 'customerId', 'rating']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.orderId is string && data.orderId.size() <= 64 &&
+             data.courierId is string && data.courierId.size() <= 128 &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5;
+    }
+
+    function isValidLoyaltyAccount(data) {
+      return data.keys().hasAll(['customerId', 'currentPoints', 'tier']) &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.currentPoints is number && data.currentPoints >= 0 &&
+             data.tier in ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'];
+    }
+
+    // User Collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming());
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Orders Collection
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.courierId == request.auth.uid ||
+        resource.data.storeId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.courierId == request.auth.uid ||
+        resource.data.storeId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && isValidOrder(incoming()) && (incoming().customerId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidOrder(incoming()) && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.courierId == request.auth.uid ||
+        resource.data.storeId == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Driver Locations (Real-Time Tracking)
+    match /driverLocations/{courierId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && (isOwner(courierId) || isAdmin()) && isValidDriverLocation(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Merchant Ratings
+    match /merchantRatings/{ratingId} {
+      allow read: if true;
+      allow create: if isValidMerchantRating(incoming()) && (
+        (isSignedIn() && incoming().customerId == request.auth.uid) ||
+        (!isSignedIn() && isValidId(incoming().customerId))
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Courier Ratings
+    match /courierRatings/{ratingId} {
+      allow read: if true;
+      allow create: if isValidCourierRating(incoming()) && (
+        (isSignedIn() && incoming().customerId == request.auth.uid) ||
+        (!isSignedIn() && isValidId(incoming().customerId))
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Loyalty Accounts
+    match /loyaltyAccounts/{customerId} {
+      allow get: if isSignedIn() && (isOwner(customerId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow create, update: if isSignedIn() && (isOwner(customerId) || isAdmin()) && isValidLoyaltyAccount(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Admins
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // System Configurations (Dispatch & Database URLs)
+    match /systemConfig/{configId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    // Stores & Restaurants
+    match /stores/{storeId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    // Promo Codes
+    match /promoCodes/{codeId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    // System Settings & Operational Parameters
+    match /systemSettings/{settingId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+  }
+}

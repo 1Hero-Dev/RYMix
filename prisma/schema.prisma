@@ -1,0 +1,249 @@
+// Prisma Schema for RYM SuperApp (Wilaya de Mila 43 - Ahmed Rachedi)
+// Architecture: Fastify + TypeScript + Prisma + PostgreSQL
+// Real-time Service: Lightweight Go WebSocket/SSE Daemon for GPS Telemetry
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  COURIER
+  MERCHANT
+  ADMIN
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  KITCHEN_PREP
+  READY_FOR_PICKUP
+  COURIER_ASSIGNED
+  PICKED_UP
+  DELIVERING
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY // Espèces à la livraison (DZD)
+  CIB_EDAHABIA     // Paiement Carte Edahabia / CIB Satim
+  LOYALTY_POINTS   // Points de fidélité RYM Club
+}
+
+enum VehicleType {
+  MOTO
+  SCOOTER
+  CAR
+  BICYCLE
+}
+
+model User {
+  id           String      @id @default(uuid())
+  phone        String      @unique // e.g., +213550123456 (Algerian phone)
+  email        String?     @unique
+  fullName     String
+  role         UserRole    @default(CUSTOMER)
+  avatarUrl    String?     // WebP image URL
+  commune      String      @default("Mila Centre")
+  wilaya       String      @default("43 - Mila")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  orders       Order[]     @relation("CustomerOrders")
+  courier      Courier?
+  reviews      Review[]
+  loyalty      LoyaltyAccount?
+
+  @@index([phone])
+}
+
+model Store {
+  id              String      @id @default(uuid())
+  name            String
+  category        String
+  rating          Float       @default(4.8)
+  reviewCount     Int         @default(0)
+  deliveryTimeMin Int         @default(25)
+  distanceKm      Float       @default(1.2)
+  deliveryFee     Int         @default(150)
+  minOrder        Int         @default(500)
+  isOpen          Boolean     @default(true)
+  imageUrl        String      // WebP image URL
+  address         String
+  commune         String      @default("Mila Centre")
+  wilaya          String      @default("43 - Mila")
+  phone           String
+  notice          String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  menuItems       MenuItem[]
+  orders          Order[]
+  reviews         Review[]
+
+  @@index([commune, isOpen])
+}
+
+model MenuItem {
+  id            String      @id @default(uuid())
+  storeId       String
+  name          String
+  description   String
+  price         Int         // in Algerian Dinars (DZD)
+  originalPrice Int?
+  imageUrl      String      // WebP image URL
+  category      String
+  isAvailable   Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+
+  @@index([storeId, category])
+}
+
+model Courier {
+  id             String            @id @default(uuid())
+  userId         String            @unique
+  vehicleType    VehicleType       @default(MOTO)
+  plateNumber    String?
+  isOnline       Boolean           @default(false)
+  currentLat     Float?            // GPS Latitude
+  currentLng     Float?            // GPS Longitude
+  todayEarnings  Int               @default(0)
+  totalDeliveries Int              @default(0)
+  rating         Float             @default(4.9)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders         Order[]           @relation("CourierOrders")
+  telemetry      DriverTelemetry[]
+  reviews        Review[]
+
+  @@index([isOnline])
+}
+
+model Order {
+  id              String               @id @default(uuid())
+  orderNumber     String               @unique // e.g., HB-1042
+  customerId      String
+  storeId         String
+  courierId       String?
+  status          OrderStatus          @default(PLACED)
+  subtotalDZD     Int
+  deliveryFeeDZD  Int
+  totalDZD        Int
+  paymentMethod   PaymentMethod        @default(CASH_ON_DELIVERY)
+  deliveryNotes   String?
+  dropoffAddress  String
+  proofPhotoUrl   String?              // WebP delivery proof in Cloud Storage
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  customer        User                 @relation("CustomerOrders", fields: [customerId], references: [id])
+  store           Store                @relation(fields: [storeId], references: [id])
+  courier         Courier?             @relation("CourierOrders", fields: [courierId], references: [id])
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+  reviews         Review[]
+
+  @@index([customerId])
+  @@index([storeId])
+  @@index([courierId])
+  @@index([status])
+}
+
+model OrderItem {
+  id          String    @id @default(uuid())
+  orderId     String
+  menuItemId  String
+  name        String
+  price       Int       // in DZD
+  quantity    Int       @default(1)
+  optionsJson Json?
+
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem  @relation(fields: [menuItemId], references: [id])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  status    OrderStatus
+  actorRole String      // CUSTOMER, COURIER, MERCHANT, SYSTEM
+  actorName String
+  note      String?
+  createdAt DateTime    @default(now())
+
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model DriverTelemetry {
+  id            String    @id @default(uuid())
+  courierId     String
+  lat           Float
+  lng           Float
+  heading       Float?
+  speed         Float?
+  activeOrderId String?
+  recordedAt    DateTime  @default(now())
+
+  courier       Courier   @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  @@index([courierId, recordedAt])
+}
+
+model LoyaltyAccount {
+  id              String    @id @default(uuid())
+  customerId      String    @unique
+  points          Int       @default(0)
+  tier            String    @default("BRONZE") // BRONZE, SILVER, GOLD, VIP_MILA
+  lifetimeDinars  Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  customer        User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id         String    @id @default(uuid())
+  orderId    String
+  storeId    String
+  courierId  String?
+  customerId String
+  rating     Int       // 1 to 5
+  comment    String?
+  createdAt  DateTime  @default(now())
+
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  courier    Courier?  @relation(fields: [courierId], references: [id])
+  customer   User      @relation(fields: [customerId], references: [id])
+
+  @@index([storeId])
+  @@index([courierId])
+}
+
+model SmsNotificationLog {
+  id         String    @id @default(uuid())
+  recipient  String    // Algerian phone e.g. +213550123456
+  sender     String    // Android SIM sender e.g. +213550123456
+  message    String
+  status     String    // SENT, SIMULATED, FAILED
+  httpStatus Int?
+  type       String    // OTP, ORDER_CONFIRMATION, COURIER_ASSIGNED, DELIVERED
+  createdAt  DateTime  @default(now())
+
+  @@index([recipient])
+  @@index([createdAt])
+}

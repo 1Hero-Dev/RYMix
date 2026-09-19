@@ -1,0 +1,321 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// USERS & AUTHENTICATION
+// -----------------------------------------------------------------------------
+
+enum Role {
+  CUSTOMER
+  COURIER
+  MERCHANT_STAFF
+  MERCHANT_OWNER
+  ADMIN_SUPPORT
+  ADMIN_OPERATIONS
+  SUPER_ADMIN
+}
+
+model User {
+  id           String   @id @default(uuid())
+  phone        String   @unique
+  passwordHash String?
+  name         String?
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customerAddresses CustomerAddress[]
+  orders            Order[]             @relation("CustomerOrders")
+  deliveries        Delivery[]          @relation("CourierDeliveries")
+  storeMemberships  StoreMembership[]
+  courierProfile    CourierProfile?
+
+  @@index([phone])
+}
+
+model CustomerAddress {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  label        String?  // e.g., "Home", "Work"
+  wilaya       String
+  commune      String
+  street       String
+  building     String?
+  floor        String?
+  apartment    String?
+  landmark     String?  // Critical for local delivery (e.g., "Near Mosque")
+  lat          Float?
+  lng          Float?
+  instructions String?
+  isDefault    Boolean  @default(false)
+
+  orders       Order[]
+
+  @@index([userId])
+}
+
+// -----------------------------------------------------------------------------
+// STORES & CATALOG
+// -----------------------------------------------------------------------------
+
+enum StoreStatus {
+  OPEN
+  BUSY
+  PAUSED
+  CLOSED
+}
+
+model Store {
+  id           String      @id @default(uuid())
+  name         String
+  category     String
+  status       StoreStatus @default(CLOSED)
+  prepTimeMin  Int         @default(15) // Estimated default prep time in minutes
+  lat          Float
+  lng          Float
+  address      String
+  imageUrl     String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  orders         Order[]
+  memberships    StoreMembership[]
+  hours          StoreHours[]
+
+  @@index([status])
+  @@index([category])
+}
+
+model StoreHours {
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  dayOfWeek Int      // 0 = Sunday, 1 = Monday, etc.
+  openTime  String   // e.g., "09:00"
+  closeTime String   // e.g., "23:00"
+  isClosed  Boolean  @default(false)
+
+  @@index([storeId])
+}
+
+model StoreMembership {
+  id       String @id @default(uuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  storeId  String
+  store    Store  @relation(fields: [storeId], references: [id])
+  role     Role   // MERCHANT_STAFF or MERCHANT_OWNER
+
+  @@index([userId])
+  @@index([storeId])
+}
+
+model MenuCategory {
+  id        String     @id @default(uuid())
+  storeId   String
+  store     Store      @relation(fields: [storeId], references: [id])
+  name      String
+  sortOrder Int        @default(0)
+  items     MenuItem[]
+
+  @@index([storeId])
+}
+
+enum ItemStatus {
+  AVAILABLE
+  OUT_OF_STOCK
+  HIDDEN
+}
+
+model MenuItem {
+  id             String       @id @default(uuid())
+  storeId        String
+  store          Store        @relation(fields: [storeId], references: [id])
+  categoryId     String
+  category       MenuCategory @relation(fields: [categoryId], references: [id])
+  name           String
+  description    String?
+  price          Float
+  status         ItemStatus   @default(AVAILABLE)
+  imageUrl       String?
+  sortOrder      Int          @default(0)
+
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// ORDERS & DELIVERIES
+// -----------------------------------------------------------------------------
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  ASSIGNED
+  PICKED_UP
+  DELIVERING
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id                String       @id @default(uuid())
+  idempotencyKey    String?      @unique
+  customerId        String
+  customer          User         @relation("CustomerOrders", fields: [customerId], references: [id])
+  storeId           String
+  store             Store        @relation(fields: [storeId], references: [id])
+
+  // Snapshots for pricing (Must remain authoritative independently of catalog changes)
+  subtotalSnapshot  Float
+  deliveryFee       Float
+  taxSnapshot       Float        @default(0)
+  discountSnapshot  Float        @default(0)
+  totalSnapshot     Float
+
+  status            OrderStatus  @default(PENDING)
+
+  // Logistics
+  addressId         String?
+  address           CustomerAddress? @relation(fields: [addressId], references: [id])
+  deliveryLat       Float
+  deliveryLng       Float
+  deliveryNotes     String?
+
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  items             OrderItem[]
+  statusHistory     OrderStatusHistory[]
+  delivery          Delivery?
+  payment           Payment?
+
+  @@index([customerId])
+  @@index([storeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid())
+  orderId             String
+  order               Order    @relation(fields: [orderId], references: [id])
+  menuItemId          String?  // Optional to allow keeping item history even if deleted from catalog
+
+  // Snapshots: never read from catalog for past orders
+  productNameSnapshot String
+  unitPriceSnapshot   Float
+  optionsSnapshot     Json?
+  quantity            Int
+
+  @@index([orderId])
+}
+
+// -----------------------------------------------------------------------------
+// PAYMENTS & PROMOTIONS
+// -----------------------------------------------------------------------------
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  CARD
+  EDAHBIA
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+  amount        Float
+  method        PaymentMethod @default(CASH_ON_DELIVERY)
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model Promotion {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  description String?
+  discountAmt Float
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([code])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  notes     String?
+  createdAt DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+model Delivery {
+  id           String      @id @default(uuid())
+  orderId      String      @unique
+  order        Order       @relation(fields: [orderId], references: [id])
+  courierId    String?
+  courier      User?       @relation("CourierDeliveries", fields: [courierId], references: [id])
+
+  pickupLat    Float
+  pickupLng    Float
+  destLat      Float
+  destLng      Float
+
+  estimatedDistance Float?
+  deliveryFee       Float // Fee given to the courier
+
+  assignedAt   DateTime?
+  pickedUpAt   DateTime?
+  deliveredAt  DateTime?
+
+  @@index([courierId])
+}
+
+// -----------------------------------------------------------------------------
+// COURIER SPECIFIC
+// -----------------------------------------------------------------------------
+
+enum CourierStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+}
+
+model CourierProfile {
+  id            String        @id @default(uuid())
+  userId        String        @unique
+  user          User          @relation(fields: [userId], references: [id])
+  status        CourierStatus @default(OFFLINE)
+  vehicleType   String?
+
+  @@index([status])
+}

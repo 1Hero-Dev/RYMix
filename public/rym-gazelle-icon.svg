@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Brand Gazelle Head Profile Logo Icon - App Schema Dune Gold (#D9943B) -->
+  <defs>
+    <linearGradient id="gazelleBrandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F5A742" />
+      <stop offset="50%" stop-color="#D9943B" />
+      <stop offset="100%" stop-color="#B8731E" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer circle, sweeping horn, bridge of snout, chin & neck curve -->
+  <path
+    d="M 18 20 L 72 49 L 62 59 C 67 74 64 85 52 92 C 76 88 92 72 92 50 C 92 28 76 12 52 12 C 43 12 37 19 34 28"
+    stroke="url(#gazelleBrandGradient)"
+    stroke-width="6.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Ear loop -->
+  <path
+    d="M 31 29 C 20 40 14 55 20 67 C 25 76 36 70 42 52 C 45 44 46 38 46 35"
+    stroke="url(#gazelleBrandGradient)"
+    stroke-width="6.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
