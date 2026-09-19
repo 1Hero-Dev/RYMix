@@ -290,16 +290,16 @@ export const CourierAppView: React.FC<Props> = ({
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span>Radar actif Ahmed Rachedi Centre</span>
+                    <span>Offres de livraison / File d'attente</span>
                     <span className="text-[9px] bg-emerald-500/20 text-emerald-400 font-semibold px-1.5 py-0.5 rounded">
-                      Rayon ~2.0 km
+                      Dispatch Go
                     </span>
                   </h3>
-                  <p className="text-[11px] text-zinc-400">Périmètre 2,0 km • Centre-ville, El Bassatine, En-Nasr</p>
+                  <p className="text-[11px] text-zinc-400">Offres personnalisées par le moteur d'assignation autoritaire</p>
                 </div>
               </div>
               <span className="bg-[#00B578]/20 text-[#00B578] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#00B578]/40">
-                {availableMissions.length} Disponibles
+                {availableMissions.length} Offres actives
               </span>
             </div>
 

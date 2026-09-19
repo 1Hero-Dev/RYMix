@@ -1,3 +1,26 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Client Local Cache / Offline Store (Local Client Storage)
+ * 
+ * ARCHITECTURAL BOUNDARY & OWNERSHIP:
+ * - ROLE: Client-side ephemeral cache & offline persistence layer.
+ * - CONTAINS:
+ *   - Cached stores & catalog for instant first-paint
+ *   - Local cart state
+ *   - User preferences & recent delivery addresses
+ *   - Offline pending actions & optimistic review drafts
+ *   - Last known order state mirror for offline display
+ * - NON-AUTHORITATIVE:
+ *   This client store is STRICTLY NOT the authoritative owner of:
+ *   - Order state transitions (owned by Server Order Lifecycle + PostgreSQL)
+ *   - Payment records & COD settlement (owned by Payment domain + PostgreSQL)
+ *   - Courier assignment & dispatch decisions (owned by Go Realtime Dispatch)
+ *   - Pricing, fees & promotions (owned by Server Pricing Engine)
+ *   - Loyalty ledger transactions (owned by Server Loyalty Ledger + PostgreSQL)
+ */
+
 import {
   CustomerFidelityProfile,
   FidelityTransaction,

@@ -1,104 +1,167 @@
-# Master Architecture Specification
+# Master Architecture Specification — RYM Platform (V2)
 
 ## 1. System Architecture
-The system is designed as a **Modular Monolith + Specialized Realtime Service** tailored for small-city/local delivery (e.g., a 2 km delivery radius).
 
-### Components:
-- **Fastify API (TypeScript)**: The core modular monolith. Handles Auth, Users, Stores, Catalog, Orders, Payments, Promotions, Merchant logic, and Admin logic. Talks to PostgreSQL.
-- **Go Realtime Engine**: A specialized, low-allocation service for WebSockets, GPS state, Courier presence, and Dispatch assignment.
-- **PostgreSQL**: The durable database (managed via Prisma).
-- **Frontends (React/Vite)**:
-  - Customer PWA (Mobile-first, max-width shell)
-  - Courier PWA (Mobile-first, ultra-simple)
-  - Merchant Web (Tablet/Desktop dashboard)
-  - Admin Web (Desktop dashboard)
-- **Reverse Proxy**: Handles HTTPS/WSS and routes traffic, ensuring internal services (Fastify <-> Go) communicate securely and are not directly exposed.
+The system is designed as a **Modular Monolith API Platform + Specialized Go Realtime Service** tailored for local delivery logistics in Ahmed Rachedi (Wilaya 43 - Mila).
+
+### Core Architectural Principle
+> **Every important piece of state and every important decision must have exactly one owner.**
+
+### System Subsystems & Boundaries:
+- **Applications (UI Presentation)**:
+  - Customer Application (Mobile-first shell, actions submitted via API)
+  - Courier Application (Ultra-simple, delivery offers queue)
+  - Merchant Application (Tablet/Desktop kitchen & inventory dashboard)
+  - Admin Dashboard (Operations, analytics, audit trail)
+- **API Platform (Modular Monolith)**:
+  - Handles Auth, Stores, Discovery, Checkout, Orders, Pricing, Promotions, Loyalty, Scheduling, Notifications, Admin.
+  - Exposes HTTPS / WSS endpoints; enforces transactional boundaries.
+- **Durable Core (PostgreSQL)**:
+  - Authoritative, durable source of truth for Users, Stores, Products, Orders, Deliveries, Payments, Promotions, and Audit Ledgers.
+- **Client Local Storage / Offline Cache**:
+  - `localStorage` and memory caching strictly for client convenience (cached stores, cart, offline queue, user preferences). Non-authoritative.
+- **Go Realtime Platform (`services/realtime-dispatch`)**:
+  - Low-allocation, low-latency micro-daemon structured into distinct sub-packages:
+    - `websocket/`: Gateway connection hub & streaming broadcasts.
+    - `presence/`: Courier presence, heartbeats, operational state (`ONLINE`, `AVAILABLE`, `BUSY`, `OFFLINE`).
+    - `tracking/`: Real-time GPS state, adaptive tracking intervals (20s/5s/3s), in-memory fast lookups.
+    - `dispatch/`: Single authoritative dispatch subsystem:
+      - `candidate.go`: Spatial candidate filtering within radius.
+      - `scorer.go`: Multi-criteria deterministic scoring.
+      - `assignment.go`: Delivery offers generation & accept/reject queue.
+      - `batching.go`: Batch manager & multi-order bundling eligibility.
+      - `route.go`: Route optimizer (stop sequencing: pickup before dropoff).
+    - `telemetry/`: Telemetry store for sampled metrics (battery, latency, network), decoupled from live state.
+- **Event & Integration Adapters**:
+  - **FCM Push Notification Adapter**: Pushes order events to mobile devices.
+  - **Maps Adapter**: Leaflet / OpenStreetMap routing and visual polylines.
+  - **Payment Adapter**: Cash-on-Delivery (COD) cash reconciliation and settlements.
+  - **SMS Gateway**: Telecom SMS OTP / notifications.
 
 ---
 
-## 2. Database ERD (Prisma / PostgreSQL)
-Data ownership belongs exclusively to PostgreSQL. Historical orders must rely on **snapshots**, not live catalog data.
-Key Entities:
-- **Users, Roles & Auth**: Users (Phone + OTP based), Sessions.
-- **Stores & Catalog**: Stores, StoreHours, MenuCategories, MenuItems (with `isAvailable` state).
-- **Orders**: Orders, OrderItems (includes `unitPriceSnapshot`, `productNameSnapshot`), OrderStatusHistory.
-- **Deliveries**: A distinct entity from `Order` handling courier logistics, assignment, and status.
+## 2. Authoritative Single-Owner Matrix
+
+| State / Decision | Authoritative Owner | Secondary / Cache Storage | Invariant Rule |
+|---|---|---|---|
+| **Order State** | API + PostgreSQL | Firestore mirror / Local cache | Transitions validated by `OrderLifecycle` state machine; client only requests actions |
+| **Payment State / COD** | Payment Domain + PostgreSQL | Courier COD Ledger | Immutable once collected; reconciled at courier shift checkout |
+| **Order Pricing & Fees** | Server Pricing Engine | Client UI display state | Re-evaluated server-side on checkout; client amounts never trusted |
+| **Promotion Validity** | Promotion Domain + PostgreSQL | Local cache for UI badges | Verified against usage quotas and anti-stacking policies in transaction |
+| **Courier Live GPS State** | Go Realtime Platform (Memory) | None | Ephemeral streaming over WebSockets/SSE; never persisted per GPS tick |
+| **Historical Telemetry** | Telemetry Store | Delivery milestone snapshots | Sampled ring buffer (battery, connection quality, speed) |
+| **Dispatch Decision** | Go Dispatch Subsystem | Outbox Event Log | Deterministic candidate ranking and assignment offer queue |
+| **Route Stop Sequence** | Route Optimizer (under Batch Manager) | Courier App navigation view | Orders stops by transit efficiency respecting pickup before dropoff |
+| **UI State** | Client Local State | Browser Session / LocalStorage | Purely display/interaction state; no authoritative business logic |
+| **Push Notification Delivery** | FCM Push Adapter | Native Web Notification Tray | Consumes from Outbox domain events asynchronously |
+| **Audit Logs & History** | Outbox Event Bus + PostgreSQL | Append-only Ledger | Every state change produces an immutable audit record |
 
 ---
 
 ## 3. Order State Machine
+
 Strict server-side validated state transitions:
-`PENDING → CONFIRMED → PREPARING → READY → ASSIGNED → PICKED_UP → DELIVERING → DELIVERED`
+`PENDING → CONFIRMED → PREPARING → READY → ASSIGNED → PICKED_UP → DELIVERING → ARRIVED → DELIVERED`
+
 Cancellations:
-`PENDING/CONFIRMED/PREPARING → CANCELLED` (depending on business rules).
-All transitions are recorded in `OrderStatusHistory`.
+`PENDING / CONFIRMED / PREPARING → CANCELLED` (depending on merchant and business rules).
+
+All transitions produce domain events through the **Transactional Outbox Event Bus**:
+`Order Event → Realtime, Notification (FCM), Dispatch, Analytics, Audit`.
 
 ---
 
-## 4. Dispatch Algorithm
-Deterministic scoring system instead of AI.
-For a `READY` order, find available couriers within the radius and calculate:
-`Score = distance_to_store + current_active_orders_penalty + direction_penalty + estimated_delay + courier_status_penalty`.
-Offer to the best courier. If timeout/rejected, try the next.
+## 4. Dispatch & Fulfillment Pipeline
+
+The dispatch system is unified under a single fulfillment pipeline:
+
+```text
+Dispatch System (Go)
+├── Candidate Selection (Spatial radius filtering)
+├── Courier Scoring (Proximity + Active Load + Rating)
+├── Assignment (Delivery Offer created -> Courier responds Accept/Reject)
+└── Batch Manager
+      ├── Batch Eligibility (Store synchronization & prep window)
+      ├── Batch Creation (Bundle of compatible deliveries)
+      ├── Route Optimizer (Stop sequencing: pickups before dropoffs)
+      └── Batch Reassignment (Fallback on courier rejection)
+```
 
 ---
 
-## 5. GPS & WebSocket Protocol
-### GPS Tracking (Adaptive Updates)
-- Courier stationary: 20-30s
-- Moving normally: 5-10s
-- Within 300m of destination: 3-5s
-- Moved < 10m: Do not broadcast.
-Stale location detection: If no update for 15s -> "Location updating...", 60s -> "Location unavailable".
-Stop tracking when courier has no active delivery.
+## 5. GPS Telemetry & Adaptive Interval Rules
 
-### WebSocket
-- **Auth**: Must be authenticated (JWT) and authorized (Does this customer own this order?).
-- **Resilience**: Implement a reconnect strategy with jitter (1s, 2s, 4s, 8s). On reconnect, use REST to fetch current state, then resume WebSocket.
+- **Stationary Courier**: 20–30s intervals.
+- **Moving Normally**: 5–10s intervals.
+- **Within 300m of Destination**: 3–5s intervals.
+- **Moved < 10m**: Broadcast suppressed to conserve courier battery and mobile bandwidth.
+- **Stale Detection**:
+  - > 15s without ping: "Location updating..."
+  - > 60s without ping: "Location unavailable"
 
 ---
 
-## 6. Authentication & Roles
-- **Primary Auth**: Phone number + SMS OTP -> JWT Session (short-lived access token + refresh token).
-- **Roles**:
-  - `ADMIN`: (Super Admin, Operations, Support)
-  - `MERCHANT`: (Owner, Staff)
-  - `COURIER`
-  - `CUSTOMER`
+## 6. Target Architecture Diagram
 
----
+```text
+                         ┌───────────────────────────────┐
+                         │          USERS                │
+                         │ Customer Courier Merchant Admin│
+                         └───────────────┬───────────────┘
+                                         │
+                                         ▼
+              ┌──────────────────────────────────────────────┐
+              │                 APPLICATIONS                 │
+              │  (Action requests via API • Presentation UI) │
+              │ Customer │ Courier │ Merchant │ Admin        │
+              └────────────────────┬─────────────────────────┘
+                                   │
+                              HTTPS / WSS
+                                   │
+              ┌────────────────────▼─────────────────────────┐
+              │                  API PLATFORM                │
+              │                                              │
+              │ Auth │ Stores │ Discovery │ Checkout         │
+              │ Orders │ Pricing │ Promotions │ Loyalty      │
+              │ Scheduling │ Notifications │ Admin           │
+              └────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │   PostgreSQL    │
+                          │                 │
+                          │ Durable State   │
+                          │ Source of Truth │
+                          └─────────────────┘
 
-## 7. UX & Offline Behavior
-### Offline UX
-UI must communicate network state gracefully (`ONLINE` -> `DEGRADED` -> `OFFLINE`).
-"Connection is weak. Your order is still safe." instead of generic error screens.
 
-### Maps
-- Optimize map rendering: Do not recreate the map on GPS update; only update the marker position/heading.
-- Customer wants ETA and Status prioritized over a massive map.
+       ┌─────────────────────────────────────────────────────┐
+       │                GO REALTIME PLATFORM                  │
+       │                                                     │
+       │ WebSocket Gateway │ Presence │ GPS │ Tracking       │
+       │                                                     │
+       │                 DISPATCH SYSTEM                     │
+       │              ┌──────────────────┐                   │
+       │              │ Eligibility      │                   │
+       │              │ Scoring          │                   │
+       │              │ Assignment       │                   │
+       │              │ Batch Manager    │                   │
+       │              │ Route Optimizer  │                   │
+       │              │ ETA Engine       │                   │
+       │              └──────────────────┘                   │
+       └──────────────────────┬──────────────────────────────┘
+                              │
+                    ┌─────────┴──────────┐
+                    ▼                    ▼
+             Current State          Telemetry
+             / Presence             / Metrics
+             (Fast Memory)          (Sampled Store)
 
-### Customer & Checkout
-- Mobile shell (`max-w-md`).
-- Address includes landmarks and structured delivery instructions.
-- Checkout is a single bottom-sheet.
-- Initial payment: Cash on Delivery (hide disabled options to reduce noise).
-- Cart state in `localStorage` must be validated against the server.
 
-### Merchant & Courier
-- **Merchant**: Needs comprehensive dashboard (Accept/Reject, Prep time logic, Availability toggles).
-- **Courier**: Extremely simple flow (Go Online -> Accept -> Navigate -> Pickup -> Navigate -> Deliver).
-
----
-
-## 8. Performance Rules
-- **Images**: Critical. Use WebP/AVIF, responsive sizes, lazy loading. Small thumbnails for lists, medium for details.
-- **Go Service**: Low-allocation, low-GC pressure. Uses partitioned state managers to avoid race conditions.
-- **Distance Calculation**: Use bounding boxes first before precise lat/lng distance calculations.
-- **API**: Price and fee calculations are strictly server-authoritative.
-
----
-
-## 9. Security & Deployment
-- Fastify -> Go communication is private, with rate limiting, timeouts, request IDs, and internal network binding.
-- Implement Rate Limiting, CORS, JWT Expiry, SQL Injection protection, Request size limits, and Security headers.
-- Reverse proxy handles public exposure.
+                     EVENT / INTEGRATION LAYER
+                               │
+          ┌───────────────────┼────────────────────┐
+          ▼                   ▼                    ▼
+       FCM Push             Maps                 Payments
+       Adapter             Adapter               Adapter
+```

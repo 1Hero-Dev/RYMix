@@ -180,5 +180,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isSignedIn() || isAdmin();
     }
+
+    // Healthcheck test document
+    match /test/{testId} {
+      allow read: if true;
+    }
   }
 }

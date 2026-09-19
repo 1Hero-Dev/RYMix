@@ -1,19 +1,19 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, getFirestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App safely
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// CRITICAL: Initialize Cloud Firestore with auto-detect long-polling to prevent iframe WebChannel stream disconnects
+// CRITICAL: Initialize Cloud Firestore with forced long-polling to prevent iframe WebChannel stream disconnects
 let firestoreDb;
 try {
   firestoreDb = initializeFirestore(
     app,
     {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
     },
     firebaseConfig.firestoreDatabaseId
   );
@@ -22,6 +22,25 @@ try {
 }
 
 export const db = firestoreDb;
+
+// Validate Connection to Firestore as mandated by Firebase Integration Skill
+export async function testConnection(): Promise<boolean> {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+      return false;
+    }
+    return true;
+  }
+}
+
+// Non-blocking test on initial client boot
+if (typeof window !== 'undefined') {
+  testConnection().catch(() => {});
+}
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);

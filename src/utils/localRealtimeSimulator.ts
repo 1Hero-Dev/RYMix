@@ -109,6 +109,7 @@ class LocalRealtimeDispatchService {
   }
 
   private initFirebaseConfigSubscription() {
+    if (typeof window === 'undefined') return;
     try {
       const configRef = doc(db, 'systemConfig', 'dispatchConfig');
       this.unsubscribeConfig = onSnapshot(
@@ -131,11 +132,14 @@ class LocalRealtimeDispatchService {
           }
         },
         (error) => {
-          console.warn('Firebase dispatchConfig real-time listener notice:', error);
+          // Gracefully absorb connection fallback notices when operating in offline/local simulator mode
+          if (error?.code !== 'unavailable') {
+            console.warn('Firebase dispatchConfig real-time listener notice:', error);
+          }
         }
       );
-    } catch (error) {
-      console.warn('Failed to subscribe to realtime config from Firebase, using fallbacks:', error);
+    } catch {
+      // Local fallback in effect
     }
   }
 

@@ -287,6 +287,7 @@ export interface Order {
   discount: number;
   voucherCode?: string;
   appliedPromotionDescription?: string;
+  preparationTimeMinutes?: number;
   total: number;
   status: OrderStatus;
   statusHistory?: OrderStatusHistoryEntry[];

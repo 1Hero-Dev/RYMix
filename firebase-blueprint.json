@@ -169,6 +169,15 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "launchRadiusMeters"]
+    },
+    "TestProbe": {
+      "title": "TestProbe",
+      "description": "Backend connectivity test probe document",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
@@ -211,6 +220,10 @@
     "/systemSettings/{settingId}": {
       "schema": "SystemSetting",
       "description": "Platform operational parameters managed by admin"
+    },
+    "/test/{testId}": {
+      "schema": "TestProbe",
+      "description": "Probe document path used by testConnection to verify Cloud Firestore connectivity"
     }
   }
 }

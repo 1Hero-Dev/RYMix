@@ -11,7 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rym/realtime-dispatch/tracker"
+	"github.com/rym/realtime-dispatch/dispatch"
+	"github.com/rym/realtime-dispatch/presence"
+	"github.com/rym/realtime-dispatch/telemetry"
+	"github.com/rym/realtime-dispatch/tracking"
+	"github.com/rym/realtime-dispatch/websocket"
 )
 
 func main() {
@@ -25,17 +29,24 @@ func main() {
 		internalSecret = "rym_internal_secret_ahmedrachedi_43"
 	}
 
-	// Initialize In-Memory Store & Dispatch Engine
-	// Low-allocation, predictable memory footprint with sync.RWMutex
-	store := tracker.NewInMemCourierStore()
-	dispatcher := tracker.NewDispatchEngine(store)
-	hub := tracker.NewTelemetryHub(store)
+	// 1. Initialize Realtime Subsystems
+	locManager := tracking.NewLocationManager()
+	presManager := presence.NewPresenceManager()
+	gatewayHub := websocket.NewGatewayHub()
+	telemetryStore := telemetry.NewTelemetryStore(100)
+	dispatcher := dispatch.NewDispatcher(locManager, presManager)
 
-	// Start background 2-second telemetry ticker
-	stopCh := make(chan struct{})
-	go hub.StartBroadcastTicker(stopCh)
+	// Seed freelance courier fleet in Mila Centre (Wilaya 43)
+	locManager.UpdateGPS("courier-walid", 36.4520, 6.2670, 24.5, 85.0, 4.0, 88)
+	presManager.SetHeartbeat("courier-walid", 0)
 
-	// Constant-time internal secret validator (Audit Point 14)
+	locManager.UpdateGPS("courier-karim", 36.4555, 6.2690, 18.0, 120.0, 5.2, 74)
+	presManager.SetHeartbeat("courier-karim", 1)
+
+	locManager.UpdateGPS("courier-nassim", 36.4610, 6.2750, 32.0, 210.0, 6.0, 62)
+	presManager.SetHeartbeat("courier-nassim", 0)
+
+	// Constant-time internal secret validator
 	verifyInternalSecret := func(r *http.Request) bool {
 		received := r.Header.Get("X-Internal-Secret")
 		if received == "" {
@@ -63,110 +74,145 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":            "UP",
-			"service":           "rym-go-realtime-dispatch",
+			"service":           "rym-go-realtime-platform",
+			"subsystems":        []string{"websocket", "presence", "tracking", "dispatch", "telemetry"},
 			"wilaya":            "43 - Mila (Ahmed Rachedi)",
-			"launch_radius_m":   tracker.LaunchMaxRadiusMeters,
-			"concurrency_model": "Low-allocation sync.RWMutex Concurrent Map",
+			"launch_radius_m":   tracking.LaunchMaxRadiusMeters,
+			"concurrency_model": "Low-allocation sync.RWMutex Subsystem Architecture",
 			"timestamp":         time.Now().Format(time.RFC3339),
 		})
 	}))
 
-	// GET /api/v1/couriers - Snapshot of in-memory telemetry
+	// GET /api/v1/couriers - Snapshot of in-memory locations & presence
 	http.HandleFunc("/api/v1/couriers", withCORS(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		couriers := store.GetAllCouriers()
+		locations := locManager.GetAllLocations()
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"count":             len(couriers),
-			"launch_radius_m":   tracker.LaunchMaxRadiusMeters,
-			"center_reference":  "Mila Centre (36.4503, 6.2649)",
-			"couriers":          couriers,
+			"count":            len(locations),
+			"launch_radius_m":  tracking.LaunchMaxRadiusMeters,
+			"center_reference": "Mila Centre (36.4503, 6.2649)",
+			"couriers":         locations,
 		})
 	}))
 
-	// POST /api/v1/telemetry - Courier device GPS ingestion (Audit Point 9: Adaptive tracking)
+	// POST /api/v1/telemetry - Courier device GPS ingestion
 	http.HandleFunc("/api/v1/telemetry", withCORS(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Verify courier authorization token
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			http.Error(w, "Unauthorized: missing bearer token", http.StatusUnauthorized)
 			return
 		}
 
-		var payload tracker.TelemetryUpdate
+		var payload struct {
+			CourierID      string  `json:"courier_id"`
+			Lat            float64 `json:"lat"`
+			Lng            float64 `json:"lng"`
+			SpeedKmh       float64 `json:"speed_kmh"`
+			Heading        float64 `json:"heading"`
+			AccuracyMeters float64 `json:"accuracy_meters"`
+			BatteryPct     int     `json:"battery_pct"`
+			ActiveOrders   int     `json:"active_orders"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
 			return
 		}
 
-		updated := store.UpdateLocation(payload)
+		loc := locManager.UpdateGPS(
+			payload.CourierID,
+			payload.Lat, payload.Lng,
+			payload.SpeedKmh, payload.Heading,
+			payload.AccuracyMeters, payload.BatteryPct,
+		)
+		presManager.SetHeartbeat(payload.CourierID, payload.ActiveOrders)
+
+		// Record sample in telemetry store
+		telemetryStore.RecordSample(telemetry.MetricSample{
+			CourierID:   payload.CourierID,
+			Timestamp:   time.Now(),
+			BatteryPct:  payload.BatteryPct,
+			SpeedKmh:    payload.SpeedKmh,
+			NetworkType: "4G",
+		})
+
+		// Broadcast delta over gateway
+		gatewayHub.Broadcast("courier.location.updated", loc)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
-			"courier": updated,
+			"courier": loc,
 		})
 	}))
 
-	// GET /api/v1/dispatch/candidates - Fastify -> Go internal dispatch candidate ranking (Audit Point 3 & 14)
+	// GET /api/v1/dispatch/candidates - Authoritative Go dispatch candidate ranking
 	http.HandleFunc("/api/v1/dispatch/candidates", withCORS(func(w http.ResponseWriter, r *http.Request) {
-		// Optional internal secret validation for private service network
 		if r.Header.Get("X-Internal-Secret") != "" && !verifyInternalSecret(r) {
 			http.Error(w, "Forbidden: Invalid internal secret", http.StatusForbidden)
 			return
 		}
 
 		query := r.URL.Query()
-		storeLatStr := query.Get("store_lat")
-		storeLngStr := query.Get("store_lng")
+		storeLat := tracking.MilaCenterLat
+		storeLng := tracking.MilaCenterLng
 
-		storeLat := tracker.MilaCenterLat
-		storeLng := tracker.MilaCenterLng
-
-		if storeLatStr != "" {
-			if parsed, err := strconv.ParseFloat(storeLatStr, 64); err == nil {
-				storeLat = parsed
-			}
+		if v, err := strconv.ParseFloat(query.Get("store_lat"), 64); err == nil {
+			storeLat = v
 		}
-		if storeLngStr != "" {
-			if parsed, err := strconv.ParseFloat(storeLngStr, 64); err == nil {
-				storeLng = parsed
-			}
+		if v, err := strconv.ParseFloat(query.Get("store_lng"), 64); err == nil {
+			storeLng = v
 		}
 
-		ranked := dispatcher.RankCandidatesForStore(storeLat, storeLng)
+		ranked := dispatcher.FindAndRankCandidates(storeLat, storeLng, tracking.LaunchMaxRadiusMeters)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"store_coordinates": map[string]float64{"lat": storeLat, "lng": storeLng},
-			"max_radius_meters": tracker.LaunchMaxRadiusMeters,
+			"max_radius_meters": tracking.LaunchMaxRadiusMeters,
 			"candidates_count":  len(ranked),
 			"ranked_candidates": ranked,
 		})
 	}))
 
-	// GET /api/v1/orders/track - Authenticated order tracking subscription (Audit Point 13 & 38)
-	http.HandleFunc("/api/v1/orders/track", withCORS(func(w http.ResponseWriter, r *http.Request) {
-		orderID := r.URL.Query().Get("order_id")
-		token := r.URL.Query().Get("token")
+	// POST /api/v1/dispatch/offers - Create delivery offer
+	http.HandleFunc("/api/v1/dispatch/offers", withCORS(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 
-		if orderID == "" || token == "" {
-			http.Error(w, "Missing order_id or authorization token", http.StatusBadRequest)
+		var req struct {
+			OrderID      string  `json:"order_id"`
+			StoreLat     float64 `json:"store_lat"`
+			StoreLng     float64 `json:"store_lng"`
+			StoreName    string  `json:"store_name"`
+			CustomerName string  `json:"customer_name"`
+			FeeDZD       int     `json:"fee_dzd"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		offer, ok := dispatcher.CreateDeliveryOffer(req.OrderID, req.StoreLat, req.StoreLng, req.StoreName, req.CustomerName, req.FeeDZD)
+		if !ok {
+			http.Error(w, "No eligible couriers available within radius", http.StatusNotFound)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"order_id":   orderID,
-			"authorized": true,
-			"transport":  "sse_or_ws",
-			"freshness":  "LIVE",
+			"success": true,
+			"offer":   offer,
 		})
 	}))
 
-	// SSE / Streaming Telemetry Endpoint for browsers (fallback when pure WS is gated)
+	// SSE / Streaming Telemetry Endpoint for browsers
 	http.HandleFunc("/api/v1/telemetry/stream", withCORS(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -179,8 +225,8 @@ func main() {
 		}
 
 		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
-		subCh := hub.Subscribe(clientID)
-		defer hub.Unsubscribe(clientID)
+		subCh := gatewayHub.Subscribe(clientID)
+		defer gatewayHub.Unsubscribe(clientID)
 
 		notify := r.Context().Done()
 
@@ -195,7 +241,7 @@ func main() {
 		}
 	}))
 
-	log.Printf("🚀 RYM Go Real-time Dispatch Service running on :%s (Ahmed Rachedi 43 Launch Radius: %.0fm)", port, tracker.LaunchMaxRadiusMeters)
+	log.Printf("🚀 RYM Go Real-time Platform running on :%s (Subsystems: websocket, presence, tracking, dispatch, telemetry)", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

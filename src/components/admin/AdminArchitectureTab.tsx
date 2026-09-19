@@ -2,9 +2,18 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
- * Admin Architecture & System Boundaries Tab
- * Implements Recommendation #20 (9-Layer Logical Boundaries), #11/#15 (Outbox Events Inspector),
- * #4 (Fulfillment Models), and #5 (Authoritative Pricing Engine)
+ * Admin Architecture & System Boundaries Tab (RYM V2 Authoritative Architecture)
+ * Implements the 10 Core Architectural Changes:
+ * 1. Single Authoritative Go Dispatch Subsystem
+ * 2. Go Realtime Subsystem Decomposition (websocket, presence, tracking, dispatch, telemetry)
+ * 3. Client Local Cache / Offline Store explicitly labeled and bounded
+ * 4. Authoritative PostgreSQL as Durable Primary Transaction Database
+ * 5. FCM Push Notification Adapter in Event/Integration Layer
+ * 6. Service-oriented Capabilities representation
+ * 7. Client UI requests actions via API (no client-driven status transitions)
+ * 8. WebSocket Gateway integrated inside Go Realtime Platform
+ * 9. Unified Fulfillment Pipeline (Dispatch -> Candidate -> Scoring -> Assignment -> Batch -> Route)
+ * 10. Clear separation between Operational State, Realtime State, and Historical Telemetry
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,17 +34,22 @@ import {
   Activity,
   Boxes,
   Zap,
+  Database,
+  Server,
+  Radio,
+  GitMerge,
+  FileText,
+  Check,
 } from 'lucide-react';
 import { outboxEventBus } from '../../events/outboxEventBus';
 import { OutboxEventRecord } from '../../types';
 import { calculateAuthoritativePrice } from '../../domain/pricingEngine';
-import { AHMED_RACHEDI_SERVICE_ZONES } from '../../domain/geoZones';
-import { SEED_MERCHANT_BRANCHES } from '../../domain/merchantBranch';
 
 export const AdminArchitectureTab: React.FC = () => {
   const [outboxStats, setOutboxStats] = useState(() => outboxEventBus.getOutboxStats());
   const [isFlushing, setIsFlushing] = useState(false);
-  const [selectedLayer, setSelectedLayer] = useState<number>(3); // Default to Application / Domain
+  const [selectedLayer, setSelectedLayer] = useState<number>(4); // Default to Data & Persistence
+  const [showDiagram, setShowDiagram] = useState<boolean>(true);
 
   // Pricing Engine interactive playground state
   const [testSubtotal, setTestSubtotal] = useState<number>(1400);
@@ -83,84 +97,153 @@ export const AdminArchitectureTab: React.FC = () => {
   const ARCHITECTURAL_LAYERS = [
     {
       num: '01',
-      name: 'CLIENTS',
-      role: 'Interfaces Utilisateurs Dédiées',
-      tech: 'React 18, Tailwind CSS, Lucide Icons, Framer Motion',
-      description: 'Applications découplées par personas : Client Express, Commerçant Tablette, Livreur Mobile & Console Administration.',
-      status: 'ACTIF',
+      name: 'APPLICATIONS',
+      role: 'Expériences Clients & Personas (UI)',
+      tech: 'Customer App, Courier App, Merchant App, Admin Operations',
+      description: 'Interfaces de présentation strictes. L\'application client ne prend AUCUNE décision autoritaire : elle soumet des requêtes d\'actions (ex: POST /orders/:id/action) au serveur.',
+      status: 'AUTORITAIRE',
       color: 'border-emerald-500/40 bg-emerald-500/5 text-emerald-400',
     },
     {
       num: '02',
-      name: 'API / TRANSPORT',
-      role: 'Passerelle & Flux Temps Réel',
-      tech: 'REST Endpoints, WebSocket Streams, SSE Event Source',
-      description: 'Acheminement sécurisé des requêtes HTTPS et flux bidirectionnels légers pour la télémétrie GPS et changements d\'états.',
+      name: 'API PLATFORM',
+      role: 'Passerelle & Modules Métier',
+      tech: 'Auth, Stores, Discovery, Checkout, Orders, Pricing, Promotions, Loyalty, Scheduling, Notifications',
+      description: 'Point d\'entrée unique HTTPS/WSS avec validation des sessions JWT, rate limiting et routage des requêtes vers les services de domaine.',
       status: 'ACTIF',
       color: 'border-blue-500/40 bg-blue-500/5 text-blue-400',
     },
     {
       num: '03',
       name: 'APPLICATION SERVICES',
-      role: 'Cœur Métier & Orchestration',
-      tech: 'OrderApplicationService, FulfillmentService, DeliveryService',
-      description: 'Unique cerveau autoritaire coordonnant la création idempotente des commandes, l\'attribution livreur et la facturation.',
+      role: 'Orchestration & Événements Métier',
+      tech: 'OrderApplicationService, Idempotency Cache, Outbox Event Dispatcher',
+      description: 'Cerveau central coordonnant les commandes. Émet des événements de domaine stricts (Order Event -> Realtime, Notification, Dispatch, Analytics, Audit).',
       status: 'ACTIF',
       color: 'border-amber-500/40 bg-amber-500/5 text-amber-400',
     },
     {
       num: '04',
-      name: 'DOMAIN',
+      name: 'DOMAIN RULES',
       role: 'Règles Métier & Machines à États',
-      tech: 'OrderLifecycle (11 États), PricingEngine, GeoZones, BranchRules',
-      description: 'Machine à états stricte interdisant les sauts illégaux d\'états. Politiques d\'annulation formelles et tarification serveur.',
+      tech: 'OrderLifecycle (11 États), PricingEngine, DeliveryPolicy & FulfillmentRules',
+      description: 'Machine à états autoritaire interdisant les sauts illégaux. Politiques de livraison et calcul de tarification serveur infalsifiable.',
       status: 'ACTIF',
       color: 'border-purple-500/40 bg-purple-500/5 text-purple-400',
     },
     {
       num: '05',
-      name: 'DATA & REPOSITORIES',
-      role: 'Persistance & Idempotence',
-      tech: 'Firestore Cloud, Idempotency Cache, Local Cache Démo',
-      description: 'Transactions atomiques garantissant qu\'une commande ne soit jamais débitée ou dupliquée en cas de réseau instable.',
-      status: 'ACTIF',
+      name: 'DATA & PERSISTENCE',
+      role: 'PostgreSQL Autoritaire & Cache Client',
+      tech: 'PostgreSQL (Prisma ORM) + Client Local Cache / Offline Store',
+      description: 'Séparation nette : PostgreSQL détient l\'unique vérité durable (Users, Stores, Orders, Payments, Audit). Le Local Storage client est un cache de commodité non-autoritaire.',
+      status: 'AUTORITAIRE',
       color: 'border-cyan-500/40 bg-cyan-500/5 text-cyan-400',
     },
     {
       num: '06',
-      name: 'REALTIME GATEWAY',
-      role: 'Télémétrie & Événements Fins',
-      tech: 'Lightweight Event Deltas, Courier GPS Stream',
-      description: 'Transmission de deltas ciblés (ex: courier.location.updated) au lieu de retransmettre l\'intégralité des commandes.',
+      name: 'GO REALTIME PLATFORM',
+      role: 'Télémétrie & État Éphémère Haute Vitesse',
+      tech: 'Go Daemon (websocket, presence, tracking, telemetry)',
+      description: 'Micro-daemon Go dédié à faible allocation mémoire. Gère la passerelle WebSocket, la présence livreurs (heartbeats) et le streaming GPS adaptatif (20s/5s/3s).',
       status: 'ACTIF',
       color: 'border-rose-500/40 bg-rose-500/5 text-rose-400',
     },
     {
       num: '07',
-      name: 'DISPATCH ENGINE',
-      role: 'Algorithmes d\'Assignation & Tournées',
-      tech: 'Éligibilité, Scoring Multi-critères, Groupage de Lots, Itinéraires',
-      description: 'Moteur modulaire découplé en 5 fonctions indépendantes (Éligibilité, Scoring, Batch Optimizer, Planificateur, Réassignation).',
-      status: 'ACTIF',
+      name: 'UNIFIED DISPATCH SYSTEM',
+      role: 'Pipeline d\'Exécution & Assignation Unique',
+      tech: 'Go Dispatch (Candidate -> Scorer -> Assignment -> Batch -> Route)',
+      description: 'Unique moteur de dispatch autoritaire : Sélection des candidats par rayon, scoring multi-critères, génération d\'offres, gestionnaire de lots et ordonnancement d\'arrêts.',
+      status: 'AUTORITAIRE',
       color: 'border-indigo-500/40 bg-indigo-500/5 text-indigo-400',
     },
     {
       num: '08',
-      name: 'EXTERNAL SERVICES',
+      name: 'INTEGRATION & ADAPTERS',
       role: 'Connecteurs Tiers Spécialisés',
-      tech: 'Firebase Auth, Google Maps Routing, Gateway SMS Telecom',
-      description: 'Authentification centralisée, calcul matriciel d\'itinéraires routiers réels et notifications SMS/Push transactionnelles.',
+      tech: 'FCM Push Notification Adapter, Maps Adapter, Telecom SMS Gateway, Payment COD',
+      description: 'FCM en tant qu\'adaptateur de notifications push transactionnelles, Leaflet/OSM pour la cartographie, passerelle SMS Djezzy/Mobilis et encaissement COD.',
       status: 'ACTIF',
       color: 'border-orange-500/40 bg-orange-500/5 text-orange-400',
     },
     {
       num: '09',
-      name: 'OUTBOX & AUDIT BUS',
-      role: 'Pattern Outbox & Fiabilité des Événements',
-      tech: 'OutboxEventBus, File d\'attente transactionnelle, Journal d\'Audit',
-      description: 'Chaque mise à jour enregistre un événement dans l\'Outbox avant dispatch asynchrone garanti vers les workers et dashboards.',
+      name: 'TELEMETRY & AUDIT STORE',
+      role: 'Séparation États & Journal d\'Audit Immuable',
+      tech: 'Presence State, Realtime Fast State, Sampled Telemetry Store & Append-only Outbox',
+      description: 'Distinction absolue entre État Opérationnel (ONLINE/AVAILABLE), État Réel (mémoire vive), Télémétrie Échantillonnée (batterie/réseau) et Journal d\'Audit immuable.',
       status: 'ACTIF',
       color: 'border-emerald-400/40 bg-emerald-400/5 text-emerald-300',
+    },
+  ];
+
+  const OWNERSHIP_MATRIX = [
+    {
+      entity: 'État de Commande (Order State)',
+      owner: 'API + PostgreSQL',
+      secondary: 'Firestore Mirror / Client Cache',
+      rule: 'L\'API autorise et exécute les transitions via OrderLifecycle. Le client ne fait que requêter.',
+    },
+    {
+      entity: 'État du Paiement & COD',
+      owner: 'Domaine Paiement + PostgreSQL',
+      secondary: 'Livreur Carnet COD Local',
+      rule: 'Rapprochement des espèces lors de la clôture de service. Immuable après encaissement.',
+    },
+    {
+      entity: 'Tarification & Frais de Livraison',
+      owner: 'PricingEngine (Serveur)',
+      secondary: 'Affichage UI (estimatif)',
+      rule: 'Recalcul serveur obligatoire lors du checkout; aucun montant client n\'est accepté.',
+    },
+    {
+      entity: 'Validité Codes Promo & Vouchers',
+      owner: 'Domaine Promotions + PostgreSQL',
+      secondary: 'Cache local pour validation visuelle',
+      rule: 'Règles d\'anti-cumul strictes vérifiées dans la transaction de création.',
+    },
+    {
+      entity: 'Position GPS Courante Coursier',
+      owner: 'Go Realtime Platform (Mémoire)',
+      secondary: 'Aucune (état éphémère haute fréquence)',
+      rule: 'GPS diffusé par WebSockets; jamais persisté par tick dans la base relationnelle.',
+    },
+    {
+      entity: 'Historique Télémétrie Coursier',
+      owner: 'Telemetry Store (Échantillons)',
+      secondary: 'Jalon de livraison PostgreSQL',
+      rule: 'Échantillonnage espacé (batterie, latence, vitesse); pas d\'enregistrement continu.',
+    },
+    {
+      entity: 'Décision d\'Assignation / Dispatch',
+      owner: 'Go Dispatch Subsystem',
+      secondary: 'Outbox Event Log',
+      rule: 'Un seul cerveau d\'attribution basé sur le scoring déterministe et le rayon de 2,0 km.',
+    },
+    {
+      entity: 'Séquence des Arrêts de Tournée',
+      owner: 'Route Optimizer (sous Batch Manager)',
+      secondary: 'Affichage Application Coursier',
+      rule: 'Détermine l\'ordre optimal de passage (Collecte avant Livraison) sans décider l\'attribution.',
+    },
+    {
+      entity: 'État de l\'Interface (UI State)',
+      owner: 'Client Local (React State / Storage)',
+      secondary: 'Session Storage',
+      rule: 'Strictement cosmétique et interactif. Jamais de vérité métier dans le client.',
+    },
+    {
+      entity: 'Distribution Notifications Push',
+      owner: 'FCM Push Notification Adapter',
+      secondary: 'Web Notification API',
+      rule: 'Consomme les événements de l\'Outbox et relaie les alertes aux appareils mobiles.',
+    },
+    {
+      entity: 'Piste d\'Audit et Historique',
+      owner: 'Outbox Event Bus + PostgreSQL Ledger',
+      secondary: 'Journal Local',
+      rule: 'Journal immuable append-only pour la traçabilité des opérations à Ahmed Rachedi.',
     },
   ];
 
@@ -172,18 +255,25 @@ export const AdminArchitectureTab: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">
               <ShieldCheck size={14} />
-              Recommandations Appliquées avec Succès
+              Revue d'Architecture V2 & Appropriations Validées
             </div>
             <h2 className="text-2xl font-black tracking-tight">
-              Architecture Système Découplée en 9 Couches
+              Architecture Découplée RYM V2 — Règle de l'Unique Propriétaire
             </h2>
-            <p className="text-sm text-zinc-400 max-w-2xl mt-1">
-              Frontières logiques formalisées selon les standards de livraison express : séparation Food vs Courses,
-              moteur de tarification serveur autoritaire, dispatch modulaire, pattern Outbox et idempotence réseau.
+            <p className="text-sm text-zinc-400 max-w-3xl mt-1">
+              "Chaque élément d'état et chaque décision importante doit avoir exactement un seul propriétaire."
+              Unification du dispatch sous Go, PostgreSQL comme socle durable autoritaire, cache client borné et adaptateur FCM dédié.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowDiagram(!showDiagram)}
+              className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 border border-zinc-600 rounded-xl text-xs font-bold text-zinc-200 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+            >
+              <GitMerge size={14} className="text-cyan-400" />
+              {showDiagram ? 'Masquer Schéma' : 'Voir Schéma V2'}
+            </button>
             <button
               onClick={handleManualFlush}
               disabled={isFlushing}
@@ -203,16 +293,94 @@ export const AdminArchitectureTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Target V2 Architecture Diagram Block */}
+      {showDiagram && (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-3xl p-6 font-mono text-xs overflow-x-auto shadow-2xl">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800 mb-4">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold">
+              <Server size={16} />
+              <span>DIAGRAMME D'ARCHITECTURE CIBLE RYM V2 (AUTHORITATIVE FLOW)</span>
+            </div>
+            <span className="text-[11px] text-zinc-500">Flux d'événements stricts & frontières de persistance</span>
+          </div>
+
+          <pre className="text-zinc-300 leading-relaxed whitespace-pre font-mono text-[11px] bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800/80">
+{`                         ┌───────────────────────────────┐
+                         │          UTILISATEURS         │
+                         │                               │
+                         │ Client  Livreur Commerçant Admin│
+                         └───────────────┬───────────────┘
+                                         │
+                                         ▼
+              ┌──────────────────────────────────────────────┐
+              │                 APPLICATIONS                 │
+              │  (Requêtes d'actions via API • Présentation)  │
+              │ Customer │ Courier │ Merchant │ Admin        │
+              └────────────────────┬─────────────────────────┘
+                                   │
+                              HTTPS / WSS
+                                   │
+              ┌────────────────────▼─────────────────────────┐
+              │                  API PLATFORM                │
+              │                                              │
+              │ Auth │ Stores │ Discovery │ Checkout         │
+              │ Orders │ Pricing │ Promotions │ Loyalty      │
+              │ Scheduling │ Notifications │ Admin           │
+              └────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │   PostgreSQL    │
+                          │                 │
+                          │ Durable State   │
+                          │ Source Unique   │
+                          └─────────────────┘
+
+
+       ┌─────────────────────────────────────────────────────┐
+       │                GO REALTIME PLATFORM                  │
+       │                                                     │
+       │ WebSocket Gateway │ Presence │ GPS │ Tracking       │
+       │                                                     │
+       │                 DISPATCH SYSTEM                     │
+       │              ┌──────────────────┐                   │
+       │              │ Eligibility      │                   │
+       │              │ Scoring          │                   │
+       │              │ Assignment       │                   │
+       │              │ Batch Manager    │                   │
+       │              │ Route Optimizer  │                   │
+       │              │ ETA Engine       │                   │
+       │              └──────────────────┘                   │
+       └──────────────────────┬──────────────────────────────┘
+                              │
+                    ┌─────────┴──────────┐
+                    ▼                    ▼
+             Current State          Telemetry
+             / Presence             / Metrics
+             (Mémoire Vive)         (Échantillons)
+
+
+                     EVENT / INTEGRATION LAYER
+                               │
+          ┌───────────────────┼────────────────────┐
+          ▼                   ▼                    ▼
+       FCM Push             Maps                 Payments
+       Adapter             Adapter               Adapter
+     (Notifications)    (Leaflet / OSM)       (Cash / COD)`}
+          </pre>
+        </div>
+      )}
+
       {/* Grid: 9 Logical Boundaries */}
       <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <Layers className="text-emerald-400" size={20} />
             <h3 className="text-base font-bold text-white">
-              Les 9 Frontières Logiques (Recommandation #20)
+              Les 9 Couches Systèmes Découplées
             </h3>
           </div>
-          <span className="text-xs text-zinc-400">Cliquez sur une couche pour explorer ses composants</span>
+          <span className="text-xs text-zinc-400">Cliquez sur une couche pour explorer son rôle et ses garanties</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -251,9 +419,50 @@ export const AdminArchitectureTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Single Source of Truth Ownership Matrix */}
+      <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-zinc-800">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="text-emerald-400" size={20} />
+            <div>
+              <h3 className="text-base font-bold text-white">
+                Matrice d'Appropriation Unique (Single Owner Principle)
+              </h3>
+              <p className="text-xs text-zinc-400">Chaque état critique et décision a un seul propriétaire d'autorité</p>
+            </div>
+          </div>
+          <span className="text-xs font-mono px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
+            100% Découplé
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-400 font-mono">
+                <th className="py-2.5 px-3">Domaine / Entité d'État</th>
+                <th className="py-2.5 px-3">Propriétaire Autoritaire</th>
+                <th className="py-2.5 px-3">Stockage Secondaire / Cache</th>
+                <th className="py-2.5 px-3">Règle d'Invariant Formelle</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/60">
+              {OWNERSHIP_MATRIX.map((row, idx) => (
+                <tr key={idx} className="hover:bg-zinc-800/30 transition-colors">
+                  <td className="py-3 px-3 font-bold text-white">{row.entity}</td>
+                  <td className="py-3 px-3 font-mono text-emerald-400 font-semibold">{row.owner}</td>
+                  <td className="py-3 px-3 font-mono text-zinc-400 text-[11px]">{row.secondary}</td>
+                  <td className="py-3 px-3 text-zinc-300 text-[11px] leading-relaxed">{row.rule}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Two Column Section: Live Outbox Monitor & Authoritative Pricing Playground */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Outbox & Event Bus Monitor (Recommendations #11, #12, #15) */}
+        {/* Outbox & Event Bus Monitor */}
         <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-4">
@@ -279,7 +488,7 @@ export const AdminArchitectureTab: React.FC = () => {
             </div>
 
             <p className="text-xs text-zinc-400 mb-4">
-              Chaque mise à jour d'état s'enregistre d'abord dans la file Outbox pour garantir qu'aucun événement ne soit perdu lors des micro-coupures réseau à Ahmed Rachedi.
+              Chaque mise à jour d'état de commande s'enregistre dans l'Outbox avant distribution asynchrone garantie vers Realtime, FCM et Analytics.
             </p>
 
             <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
@@ -330,7 +539,7 @@ export const AdminArchitectureTab: React.FC = () => {
           </div>
         </div>
 
-        {/* Authoritative Pricing Engine Playground (Recommendation #5) */}
+        {/* Authoritative Pricing Engine Playground */}
         <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-4">
@@ -346,7 +555,7 @@ export const AdminArchitectureTab: React.FC = () => {
             </div>
 
             <p className="text-xs text-zinc-400 mb-4">
-              Calcul mathématique précis côté domaine évitant les incohérences client/serveur :
+              Calcul mathématique strict côté domaine (aucun total calculé côté client n'est persistant) :
             </p>
 
             {/* Interactive Inputs */}
@@ -430,62 +639,6 @@ export const AdminArchitectureTab: React.FC = () => {
             <div className="bg-zinc-950 p-2 rounded-xl border border-zinc-800">
               <span className="text-zinc-500 block">Marge Brute</span>
               <span className="font-bold text-emerald-400">{calculatedPricing.platformNetRevenueDZD} DZD</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Fulfillment Models: Food vs Shopping (Recommendation #4) */}
-      <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Boxes className="text-purple-400" size={20} />
-          <h3 className="text-base font-bold text-white">
-            Différenciation des Modèles d'Exécution : Food vs Courses (Recommandation #4)
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Food Preparation Card */}
-          <div className="bg-zinc-950/60 border border-zinc-800/90 rounded-2xl p-4">
-            <div className="flex items-center gap-2.5 mb-3 text-orange-400 font-bold text-sm">
-              <div className="p-2 bg-orange-500/10 rounded-xl border border-orange-500/20">
-                <Utensils size={16} />
-              </div>
-              <span>Modèle Restauration (FoodPreparation)</span>
-            </div>
-            <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
-              Acceptation rapide par le restaurateur, cuisson à la commande, temps de préparation thermique, emballage chaud/froid hermétique puis remise directe au coursier.
-            </p>
-            <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-              <span>Acceptée</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span className="text-orange-400 font-bold">Cuisine / Cuisson</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span>Prête au comptoir</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span>Enlèvement</span>
-            </div>
-          </div>
-
-          {/* Shopping Picking Card */}
-          <div className="bg-zinc-950/60 border border-zinc-800/90 rounded-2xl p-4">
-            <div className="flex items-center gap-2.5 mb-3 text-emerald-400 font-bold text-sm">
-              <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                <ShoppingBag size={16} />
-              </div>
-              <span>Modèle Superette & Courses (ShoppingPicking)</span>
-            </div>
-            <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
-              Workflow avec picking article par article en rayon, gestion des ruptures de stock avec propositions de substitution, approbation client et emballage en sacs cabas.
-            </p>
-            <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-              <span>Acceptée</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span className="text-emerald-400 font-bold">Picking Rayon</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span>Substitution si rupture</span>
-              <ArrowRight size={12} className="text-zinc-500" />
-              <span>Sacs scellés</span>
             </div>
           </div>
         </div>
