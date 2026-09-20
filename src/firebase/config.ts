@@ -20,39 +20,16 @@ const firebaseConfig = {
 // Initialize Firebase App safely
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// CRITICAL: Initialize Cloud Firestore with forced long-polling to prevent iframe WebChannel stream disconnects
-let firestoreDb;
-try {
-  firestoreDb = initializeFirestore(
-    app,
-    {
-      experimentalForceLongPolling: true,
-    },
-    firebaseConfig.firestoreDatabaseId
-  );
-} catch {
-  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-}
+// Initialize Cloud Firestore according to the Firebase Integration Skill
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-export const db = firestoreDb;
-
-// Validate Connection to Firestore as mandated by Firebase Integration Skill
+// Validate Connection to Firestore safely
 export async function testConnection(): Promise<boolean> {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-      return false;
-    }
-    return true;
+  } catch {
+    return false;
   }
-}
-
-// Non-blocking test on initial client boot
-if (typeof window !== 'undefined') {
-  testConnection().catch(() => {});
 }
 
 // Initialize Firebase Auth

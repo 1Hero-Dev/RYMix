@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Order, NetworkQuality, OrderStatus } from '../types';
 import { NetworkStatusBanner } from './NetworkStatusBanner';
-import { RealLeafletMap } from './RealLeafletMap';
+import { MapcnOrderTrackingMap } from './MapcnOrderTrackingMap';
 import { LazyImage } from './common/LazyImage';
 import { useAuth } from '../firebase/AuthContext';
 import {
@@ -126,8 +126,8 @@ export const LiveOrderTrackingScreen: React.FC<Props> = ({
       {/* Low-Bandwidth / Degraded Network Alert Banner */}
       <NetworkStatusBanner networkQuality={networkQuality} orderNumber={order.orderNumber} />
 
-      {/* Real Interactive Map with Actual Roads and Minimal Non-Obstructive Markers */}
-      <RealLeafletMap
+      {/* Real Interactive Map based on the open-source mapcn project */}
+      <MapcnOrderTrackingMap
         orderStatus={order.status}
         courierName={cleanCourierName}
         storeName={order.storeName}

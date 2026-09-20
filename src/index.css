@@ -243,3 +243,29 @@
   border: 1px solid rgba(217, 148, 59, 0.3) !important;
 }
 
+/* mapcn Open Source Map Components Styling (MapLibre GL + shadcn) */
+.maplibregl-popup-content {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+.maplibregl-popup-tip {
+  display: none !important;
+}
+.maplibregl-ctrl-attrib {
+  border-radius: 6px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #64748b !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(4px) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: #475569 !important;
+}
+.maplibregl-canvas {
+  outline: none;
+}
+
+

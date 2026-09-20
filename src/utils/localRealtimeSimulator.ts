@@ -6,7 +6,7 @@
  */
 
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
 
 export interface SystemEnvironmentConfig {
   databaseUrl: string;
@@ -113,33 +113,43 @@ class LocalRealtimeDispatchService {
   private initFirebaseConfigSubscription() {
     if (typeof window === 'undefined') return;
     try {
-      const configRef = doc(db, 'systemConfig', 'dispatchConfig');
-      this.unsubscribeConfig = onSnapshot(
-        configRef,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            let changed = false;
-            if (data.databaseUrl && data.databaseUrl !== this.databaseUrl) {
-              this.databaseUrl = data.databaseUrl;
-              changed = true;
-            }
-            if (data.realtimeDispatchUrl && data.realtimeDispatchUrl !== this.realtimeDispatchUrl) {
-              this.realtimeDispatchUrl = data.realtimeDispatchUrl;
-              changed = true;
-            }
-            if (changed) {
-              this.notifyConfigListeners();
-            }
+      auth.onAuthStateChanged((user) => {
+        if (!user) {
+          if (this.unsubscribeConfig) {
+            this.unsubscribeConfig();
+            this.unsubscribeConfig = null;
           }
-        },
-        (error) => {
-          // Gracefully absorb connection fallback notices when operating in offline/local simulator mode
-          if (error?.code !== 'unavailable') {
-            console.warn('Firebase dispatchConfig real-time listener notice:', error);
-          }
+          return;
         }
-      );
+        if (this.unsubscribeConfig) return;
+        const configRef = doc(db, 'systemConfig', 'dispatchConfig');
+        this.unsubscribeConfig = onSnapshot(
+          configRef,
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              let changed = false;
+              if (data.databaseUrl && data.databaseUrl !== this.databaseUrl) {
+                this.databaseUrl = data.databaseUrl;
+                changed = true;
+              }
+              if (data.realtimeDispatchUrl && data.realtimeDispatchUrl !== this.realtimeDispatchUrl) {
+                this.realtimeDispatchUrl = data.realtimeDispatchUrl;
+                changed = true;
+              }
+              if (changed) {
+                this.notifyConfigListeners();
+              }
+            }
+          },
+          (error) => {
+            // Gracefully absorb connection fallback notices when operating in offline/local simulator mode
+            if (error?.code !== 'unavailable') {
+              console.warn('Firebase dispatchConfig real-time listener notice:', error);
+            }
+          }
+        );
+      });
     } catch {
       // Local fallback in effect
     }
