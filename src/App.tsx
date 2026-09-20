@@ -49,6 +49,7 @@ import {
 } from './firebase/firebaseServices';
 import { NotificationsModal } from './components/NotificationsModal';
 import { adminService, ADMIN_UPDATED_EVENT } from './services/adminService';
+import { apiClient } from './services/apiClient';
 import { HelpCircle, History, Sparkles, BellRing } from 'lucide-react';
 
 // Asynchronously loaded secondary views & heavy modals to dramatically minimize initial bundle size
@@ -407,6 +408,11 @@ function AppContent() {
       prev.map((o) => (o.id === updated.id ? updated : o))
     );
 
+    // Phase 1 (V1, V2): Inform authoritative server of the transition
+    apiClient.transitionOrder(activeOrder.id, nextStatus, note).catch((err) => {
+      console.warn('Server transition notification:', err?.message || err);
+    });
+
     // Order projection is handled server-side by apiGateway (Recommendation N2)
     sendPushNotification('all', `Commande #${updated.orderNumber}`, note);
 
@@ -540,6 +546,11 @@ function AppContent() {
       if (activeOrder && activeOrder.id === orderId) {
         setActiveOrder(updated);
       }
+
+      // Phase 1 (V1, V2): Inform authoritative server of the transition
+      apiClient.transitionOrder(orderId, newStatus).catch((err) => {
+        console.warn('Server transition notification:', err?.message || err);
+      });
 
       // Order projection is handled server-side by apiGateway (Recommendation N2)
       sendPushNotification(

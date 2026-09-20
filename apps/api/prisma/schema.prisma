@@ -35,6 +35,7 @@ model User {
   deliveries        Delivery[]          @relation("CourierDeliveries")
   storeMemberships  StoreMembership[]
   courierProfile    CourierProfile?
+  loyaltyAccount    LoyaltyAccount?
 
   @@index([phone])
 }
@@ -319,3 +320,50 @@ model CourierProfile {
 
   @@index([status])
 }
+
+// -----------------------------------------------------------------------------
+// LOYALTY & REWARDS
+// -----------------------------------------------------------------------------
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  VIP_PLATINUM
+}
+
+enum LoyaltyTxType {
+  EARN_PURCHASE
+  REDEEM_CHECKOUT
+  BONUS_SIGNUP
+  EXPIRED_ADJUSTMENT
+}
+
+model LoyaltyAccount {
+  id             String               @id @default(uuid())
+  userId         String               @unique
+  user           User                 @relation(fields: [userId], references: [id])
+  balancePoints  Int                  @default(100)
+  lifetimePoints Int                  @default(100)
+  tier           LoyaltyTier          @default(BRONZE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  transactions   LoyaltyTransaction[]
+
+  @@index([userId])
+}
+
+model LoyaltyTransaction {
+  id          String         @id @default(uuid())
+  accountId   String
+  account     LoyaltyAccount @relation(fields: [accountId], references: [id])
+  type        LoyaltyTxType
+  pointsDelta Int
+  orderId     String?
+  description String
+  createdAt   DateTime       @default(now())
+
+  @@index([accountId])
+  @@index([orderId])
+}
+

@@ -18,9 +18,11 @@ export interface SystemEnvironmentConfig {
   launchRadiusMeters: number;
 }
 
-// Local development URLs (placeholders ready to be swapped for production URLs)
+// Local development URLs (loaded from environment with safe local fallback)
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
 export const DEFAULT_DEV_DATABASE_URL =
-  'postgresql://mila_admin:secret@localhost:5432/mila_delivery_db?schema=public';
+  env.VITE_DATABASE_URL ||
+  'postgresql://rym_admin:rym_local_dev_2026@localhost:5432/rym_delivery?schema=public';
 
 export const DEFAULT_DEV_REALTIME_HTTP_URL = 'http://localhost:8080';
 export const DEFAULT_DEV_REALTIME_WS_URL = 'ws://localhost:8080/ws';

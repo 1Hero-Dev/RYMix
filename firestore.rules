@@ -27,11 +27,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // V11 FIX: Use Firebase custom claims instead of hardcoded email.
+    // Set the 'admin' custom claim via Firebase Admin SDK or the Firebase Console.
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'boudehous.charafeddine@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isSignedIn() && request.auth.token.admin == true;
     }
 
     // Entity Validators
@@ -117,29 +116,27 @@ service cloud.firestore {
     }
 
     // Driver Locations (Real-Time Tracking)
+    // V7 FIX: Restrict reads to the courier themselves or admins.
+    // Customer live-tracking will be served via the Go WebSocket hub (Phase 2).
     match /driverLocations/{courierId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (isOwner(courierId) || isAdmin());
       allow create, update: if isSignedIn() && (isOwner(courierId) || isAdmin()) && isValidDriverLocation(incoming());
       allow delete: if isAdmin();
     }
 
     // Merchant Ratings
+    // V10 FIX: Require authentication for rating creation.
     match /merchantRatings/{ratingId} {
       allow read: if true;
-      allow create: if isValidMerchantRating(incoming()) && (
-        (isSignedIn() && incoming().customerId == request.auth.uid) ||
-        (!isSignedIn() && isValidId(incoming().customerId))
-      );
+      allow create: if isSignedIn() && isValidMerchantRating(incoming()) && incoming().customerId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
     // Courier Ratings
+    // V10 FIX: Require authentication for rating creation.
     match /courierRatings/{ratingId} {
       allow read: if true;
-      allow create: if isValidCourierRating(incoming()) && (
-        (isSignedIn() && incoming().customerId == request.auth.uid) ||
-        (!isSignedIn() && isValidId(incoming().customerId))
-      );
+      allow create: if isSignedIn() && isValidCourierRating(incoming()) && incoming().customerId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
@@ -158,27 +155,31 @@ service cloud.firestore {
     }
 
     // System Configurations (Dispatch & Database URLs)
+    // V3 FIX: Admin-only writes. Any signed-in user should NOT be able to modify system config.
     match /systemConfig/{configId} {
       allow read: if true;
-      allow write: if isSignedIn() || isAdmin();
+      allow write: if isAdmin();
     }
 
     // Stores & Restaurants
+    // V3 FIX: Admin-only writes.
     match /stores/{storeId} {
       allow read: if true;
-      allow write: if isSignedIn() || isAdmin();
+      allow write: if isAdmin();
     }
 
     // Promo Codes
+    // V3 FIX: Admin-only writes.
     match /promoCodes/{codeId} {
       allow read: if true;
-      allow write: if isSignedIn() || isAdmin();
+      allow write: if isAdmin();
     }
 
     // System Settings & Operational Parameters
+    // V3 FIX: Admin-only writes.
     match /systemSettings/{settingId} {
       allow read: if true;
-      allow write: if isSignedIn() || isAdmin();
+      allow write: if isAdmin();
     }
 
     // Healthcheck test document

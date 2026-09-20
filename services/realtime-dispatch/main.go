@@ -26,7 +26,17 @@ func main() {
 
 	internalSecret := os.Getenv("INTERNAL_DISPATCH_SECRET")
 	if internalSecret == "" {
-		internalSecret = "rym_internal_secret_ahmedrachedi_43"
+		log.Fatal("FATAL: INTERNAL_DISPATCH_SECRET environment variable is required but not set. Refusing to start.")
+	}
+
+	// Configurable CORS origins (comma-separated). Defaults to localhost dev server.
+	allowedOriginsRaw := os.Getenv("ALLOWED_ORIGINS")
+	if allowedOriginsRaw == "" {
+		allowedOriginsRaw = "http://localhost:5173,http://localhost:3000"
+	}
+	allowedOrigins := strings.Split(allowedOriginsRaw, ",")
+	for i := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
 	}
 
 	// 1. Initialize Realtime Subsystems
@@ -55,12 +65,23 @@ func main() {
 		return subtle.ConstantTimeCompare([]byte(received), []byte(internalSecret)) == 1
 	}
 
-	// CORS Middleware
+	// CORS Middleware - restricted to allowed origins
 	withCORS := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			origin := r.Header.Get("Origin")
+			allowed := false
+			for _, o := range allowedOrigins {
+				if o == origin {
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Internal-Secret")
+			w.Header().Set("Vary", "Origin")
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
 				return
@@ -151,9 +172,10 @@ func main() {
 	}))
 
 	// GET /api/v1/dispatch/candidates - Authoritative Go dispatch candidate ranking
+	// V4 FIX: Fail-closed — always require valid internal secret.
 	http.HandleFunc("/api/v1/dispatch/candidates", withCORS(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Internal-Secret") != "" && !verifyInternalSecret(r) {
-			http.Error(w, "Forbidden: Invalid internal secret", http.StatusForbidden)
+		if !verifyInternalSecret(r) {
+			http.Error(w, "Forbidden: missing or invalid internal secret", http.StatusForbidden)
 			return
 		}
 
@@ -180,9 +202,15 @@ func main() {
 	}))
 
 	// POST /api/v1/dispatch/offers - Create delivery offer
+	// V4 FIX: Require valid internal secret for offer creation.
 	http.HandleFunc("/api/v1/dispatch/offers", withCORS(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if !verifyInternalSecret(r) {
+			http.Error(w, "Forbidden: missing or invalid internal secret", http.StatusForbidden)
 			return
 		}
 

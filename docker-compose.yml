@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rym-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rym_delivery
+      POSTGRES_USER: rym_admin
+      POSTGRES_PASSWORD: rym_local_dev_2026
+    ports:
+      - '5432:5432'
+    volumes:
+      - rym_pgdata:/var/lib/postgresql/data
+
+volumes:
+  rym_pgdata:

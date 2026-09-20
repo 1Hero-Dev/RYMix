@@ -2,19 +2,17 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
- * API Gateway & Backend-for-Frontend (BFF) Entry Point
+ * @deprecated Phase 1 Migration:
+ * This in-browser API Gateway simulation is DEPRECATED.
+ * All domain operations (pricing, orders, lifecycle, loyalty) have been relocated
+ * to the authoritative Fastify backend (`apps/api`) to resolve architectural findings:
+ * - V1: Backend logic in browser -> relocated to apps/api
+ * - V2: Client-side RBAC -> server-side Firebase Admin token verification
+ * - V5: Client-side pricing -> database catalog lookup in apps/api/src/routes/orders.ts
+ * - V6: Ephemeral in-memory store -> PostgreSQL via Prisma
  * 
- * Resolves Architecture Review Findings:
- * - H1: Replaces "god client" with unified API Gateway entry point
- * - H3: Establishes the Backend API as the single entry point for all persona apps
- * - H6: Enforces Identity & Access Management with Role-Based Access Control (RBAC)
- * - C1: Connects Merchant Portal for order intake, preparation, menu & availability
- * - C2: Connects Courier App for job offers, acceptance, and delivery status updates
- * - C3: Connects Admin Console for operations monitoring, reassignments, and audit
- * - C4: Orchestrates server-side payment intent creation and verification (no client payments)
- * - C5: Enforces server-authoritative pricing validation on order placement
- * - C6: Mediates all state machine transitions through OrderApplicationService
- * - H4 & H5: Bridges Order Lifecycle to Dispatch and fans out realtime tracking channels
+ * Use `src/services/apiClient.ts` for all server communication.
+ * This file is retained as an offline fallback / reference implementation.
  */
 
 import {

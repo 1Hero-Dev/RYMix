@@ -2,7 +2,20 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigRaw from '../../firebase-applet-config.json';
+
+// Support environment variables with fallback to local applet config (V15 fix)
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
+const firebaseConfig = {
+  ...firebaseConfigRaw,
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigRaw.apiKey,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigRaw.projectId,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigRaw.appId,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigRaw.authDomain,
+  firestoreDatabaseId: env.VITE_FIRESTORE_DATABASE_ID || firebaseConfigRaw.firestoreDatabaseId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigRaw.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigRaw.messagingSenderId,
+};
 
 // Initialize Firebase App safely
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);

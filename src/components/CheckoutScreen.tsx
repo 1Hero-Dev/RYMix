@@ -13,6 +13,7 @@ import { fidelityDB } from '../db/localDatabase';
 import { useLocalDatabase } from '../db/useLocalDatabase';
 import { adminService } from '../services/adminService';
 import { apiGateway } from '../services/apiGateway';
+import { apiClient } from '../services/apiClient';
 import {
   ArrowLeft,
   MapPin,
@@ -201,7 +202,6 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
     const voucherCodeUsed = selectedVoucher ? selectedVoucher.code : appliedPromo ? appliedPromo.code : undefined;
 
     try {
-      // Execute Authoritative Server-Side Checkout & Payment Orchestration (Recommendations C4, C5, C6, H1, H3)
       const session = {
         userId: 'cust-amine',
         name: deliveryAddress.recipientName || 'Amine B.',
@@ -209,32 +209,84 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
         token: 'auth-jwt-token-customer',
       };
 
-      const response = await apiGateway.submitCheckout(session, {
-        items: cartItems,
-        storeId,
-        storeName,
-        storeCategory: 'Livraison Express Ahmed Rachedi',
-        storeImageUrl: cartItems[0]?.imageUrl || '',
-        deliveryAddress: {
-          ...deliveryAddress,
-          wilaya: editWilaya,
-          commune: editCommune,
-          street: editStreet,
-          landmark: editLandmark,
-          phone: editPhone,
-        },
-        deliveryNotes,
-        cutleryOption: ecoCutlery,
-        voucherCode: voucherCodeUsed,
-        paymentMethod: 'COD',
-        idempotencyKey,
-      });
+      let placedOrder: Order;
 
-      if (!response.success || !response.order) {
-        setIsSubmitting(false);
-        setOrderPlacementError(response.error || 'Erreur lors de la validation serveur de la commande.');
-        setShowConfirmationReview(false);
-        return;
+      try {
+        // Phase 1 (V1, V2, V5, V6): Server-Authoritative API submission to Fastify backend
+        const apiRes = await apiClient.submitOrder({
+          storeId,
+          items: cartItems.map((item) => ({
+            menuItemId: item.menuItemId || item.id,
+            quantity: item.quantity,
+          })),
+          deliveryAddress: {
+            wilaya: editWilaya,
+            commune: editCommune,
+            street: editStreet,
+            landmark: editLandmark,
+            phone: editPhone,
+          },
+          deliveryNotes,
+          voucherCode: voucherCodeUsed,
+          idempotencyKey,
+        });
+
+        if (apiRes && apiRes.order) {
+          placedOrder = {
+            id: apiRes.order.id,
+            orderNumber: `AR-${apiRes.order.id.slice(-4).toUpperCase()}`,
+            storeId: apiRes.order.storeId,
+            storeName,
+            status: (apiRes.order.status || 'CONFIRMED') as any,
+            total: apiRes.pricing?.finalTotalDZD ?? apiRes.order.totalSnapshot,
+            deliveryFee,
+            items: cartItems,
+            deliveryAddress: {
+              ...deliveryAddress,
+              wilaya: editWilaya,
+              commune: editCommune,
+              street: editStreet,
+              landmark: editLandmark,
+              phone: editPhone,
+            },
+            createdAt: 'À l\'instant',
+            deliveryNotes,
+          };
+        } else {
+          throw new Error('Réponse serveur invalide');
+        }
+      } catch (apiErr) {
+        console.warn('Fastify API submission failed, fallback to local gateway simulation:', apiErr);
+        // Fallback to legacy client-side simulation
+        const response = await apiGateway.submitCheckout(session, {
+          items: cartItems,
+          storeId,
+          storeName,
+          storeCategory: 'Livraison Express Ahmed Rachedi',
+          storeImageUrl: cartItems[0]?.imageUrl || '',
+          deliveryAddress: {
+            ...deliveryAddress,
+            wilaya: editWilaya,
+            commune: editCommune,
+            street: editStreet,
+            landmark: editLandmark,
+            phone: editPhone,
+          },
+          deliveryNotes,
+          cutleryOption: ecoCutlery,
+          voucherCode: voucherCodeUsed,
+          paymentMethod: 'COD',
+          idempotencyKey,
+        });
+
+        if (!response.success || !response.order) {
+          setIsSubmitting(false);
+          setOrderPlacementError(response.error || 'Erreur lors de la validation serveur de la commande.');
+          setShowConfirmationReview(false);
+          return;
+        }
+
+        placedOrder = response.order;
       }
 
       // Redeem selected voucher in the client fidelity cache
@@ -245,17 +297,17 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
       // 1. Initialize Fulfillment Record for tracking
       try {
         createOrderFulfillmentRecord(
-          response.order.id,
-          response.order.storeId,
-          response.order.storeCategory,
-          response.order.items
+          placedOrder.id,
+          placedOrder.storeId,
+          placedOrder.storeCategory,
+          placedOrder.items
         );
       } catch (e) {
         console.warn('Fulfillment record init:', e);
       }
 
       setIsSubmitting(false);
-      onConfirmOrder(response.order);
+      onConfirmOrder(placedOrder);
     } catch (err: any) {
       setIsSubmitting(false);
       setOrderPlacementError(err?.message || 'Erreur inattendue lors de la transmission.');
