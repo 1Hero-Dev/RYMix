@@ -16,6 +16,8 @@ import {
   ShoppingBag,
   ArrowRight,
   Sparkles,
+  Check,
+  X,
 } from 'lucide-react';
 
 interface Props {
@@ -38,6 +40,32 @@ export const StoreDetailScreen: React.FC<Props> = React.memo(({
   const [selectedCategory, setSelectedCategory] = useState<string>(store.menuCategories[0] || '🔥 Les Populaires');
   const [isFavorited, setIsFavorited] = useState(false);
   const [claimedCoupon, setClaimedCoupon] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [shareFeedback, setShareFeedback] = useState(false);
+
+  const handleShare = async () => {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: store.name,
+          text: `Découvrez ${store.name} sur RYM Ahmed Rachedi`,
+          url: window.location.href,
+        });
+        return;
+      } catch {
+        // Fall through to clipboard copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareFeedback(true);
+      setTimeout(() => setShareFeedback(false), 2000);
+    } catch {
+      setShareFeedback(true);
+      setTimeout(() => setShareFeedback(false), 2000);
+    }
+  };
 
   // Memoize cart totals
   const { totalCount, totalAmountDZD } = useMemo(() => {
@@ -64,43 +92,96 @@ export const StoreDetailScreen: React.FC<Props> = React.memo(({
     return itemQuantityMap[itemId] || 0;
   }, [itemQuantityMap]);
 
-  // Memoize filtered items by selected menu category
+  // Memoize filtered items by selected menu category or active search query
   const filteredItems = useMemo(() => {
+    const trimmed = searchQuery.trim().toLowerCase();
+    if (trimmed) {
+      return store.items.filter(
+        (item) =>
+          item.name.toLowerCase().includes(trimmed) ||
+          item.description.toLowerCase().includes(trimmed) ||
+          item.category.toLowerCase().includes(trimmed)
+      );
+    }
     return store.items.filter((item) => item.category === selectedCategory);
-  }, [store.items, selectedCategory]);
+  }, [store.items, selectedCategory, searchQuery]);
 
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-[#F8F4EC] pb-24 relative">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md px-3.5 py-2.5 flex items-center justify-between border-b border-[#EADBCE] shadow-xs">
-        <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-          <button
-            onClick={onBack}
-            aria-label="Retour"
-            className="w-8 h-8 rounded-full bg-[#F8F4EC] border border-[#EADBCE] flex items-center justify-center text-[#0A2B35] hover:bg-[#EADBCE] active:scale-95 transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} className="text-[#0A2B35]" />
-          </button>
-          <h1 className="font-bold text-[14px] text-[#0A2B35] truncate">{store.name}</h1>
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md px-3.5 py-2.5 flex flex-col border-b border-[#EADBCE] shadow-xs">
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+            <button
+              onClick={onBack}
+              type="button"
+              aria-label="Retour"
+              className="w-8 h-8 rounded-full bg-[#F8F4EC] border border-[#EADBCE] flex items-center justify-center text-[#0A2B35] hover:bg-[#EADBCE] active:scale-95 transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} className="text-[#0A2B35]" />
+            </button>
+            <h1 className="font-bold text-[14px] text-[#0A2B35] truncate">{store.name}</h1>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0 relative">
+            <button
+              onClick={() => setIsSearchOpen((prev) => !prev)}
+              type="button"
+              aria-label="Recherche dans le menu"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                isSearchOpen ? 'bg-[#0A2B35] text-[#D9943B]' : 'hover:bg-[#F8F4EC] text-[#0A2B35]'
+              }`}
+            >
+              <Search size={18} />
+            </button>
+            <button
+              onClick={handleShare}
+              type="button"
+              aria-label="Partager"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                shareFeedback ? 'bg-emerald-600 text-white' : 'hover:bg-[#F8F4EC] text-[#0A2B35]'
+              }`}
+            >
+              {shareFeedback ? <Check size={16} /> : <Share2 size={18} />}
+            </button>
+            <button
+              onClick={() => setIsFavorited(!isFavorited)}
+              type="button"
+              aria-label="Favoris"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                isFavorited ? 'btn-gradient-tertiary text-white shadow-xs scale-105' : 'hover:bg-[#F8F4EC] text-[#0A2B35]'
+              }`}
+            >
+              <Heart size={18} className={isFavorited ? 'text-white fill-white' : 'text-[#D91A67]'} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button aria-label="Recherche dans le menu" className="w-8 h-8 rounded-full hover:bg-[#F8F4EC] flex items-center justify-center text-[#0A2B35] cursor-pointer">
-            <Search size={18} className="text-[#0A2B35]" />
-          </button>
-          <button aria-label="Partager" className="w-8 h-8 rounded-full hover:bg-[#F8F4EC] flex items-center justify-center text-[#0A2B35] cursor-pointer">
-            <Share2 size={18} className="text-[#0A2B35]" />
-          </button>
-          <button
-            onClick={() => setIsFavorited(!isFavorited)}
-            aria-label="Favoris"
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-              isFavorited ? 'btn-gradient-tertiary text-white shadow-xs scale-105' : 'hover:bg-[#F8F4EC] text-[#0A2B35]'
-            }`}
-          >
-            <Heart size={18} className={isFavorited ? 'text-white fill-white' : 'text-[#D91A67]'} />
-          </button>
-        </div>
+        {/* Collapsible Search Input */}
+        {isSearchOpen && (
+          <div className="mt-2 pt-2 border-t border-[#EADBCE]/50 flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#648692]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher un plat, ingrédient..."
+                autoFocus
+                className="w-full pl-8 pr-7 py-1.5 bg-[#F8F4EC] rounded-xl text-xs text-[#0A2B35] placeholder:text-[#648692] border border-[#EADBCE] focus:outline-none focus:border-[#D9943B]"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#648692] hover:text-[#0A2B35]"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Store Header Card */}
@@ -271,6 +352,50 @@ export const StoreDetailScreen: React.FC<Props> = React.memo(({
                         {item.name}
                       </h3>
                       <p className="text-[11px] text-[#648692] line-clamp-2 mt-0.5">{item.description}</p>
+                      
+                      {/* Tailored Category Badges for Consumers */}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.prepTimeMinutes && (
+                          <span className="text-[9px] bg-amber-50 text-amber-900 border border-amber-200/60 font-semibold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                            ⏱️ {item.prepTimeMinutes} min
+                          </span>
+                        )}
+                        {item.isSpicy && (
+                          <span className="text-[9px] bg-red-50 text-red-700 border border-red-200/60 font-semibold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                            🌶️ {item.spiceLevel === 'extra_hot' ? 'Très Piquant' : item.spiceLevel === 'hot' ? 'Piquant' : 'Légèrement Épicé'}
+                          </span>
+                        )}
+                        {item.stockQuantity !== undefined && (
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded flex items-center gap-0.5 ${
+                            item.stockQuantity <= (item.stockThreshold || 5)
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold animate-pulse'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200/60'
+                          }`}>
+                            📦 {item.stockQuantity <= (item.stockThreshold || 5) ? `Plus que ${item.stockQuantity} ${item.unit || 'unités'} !` : `${item.stockQuantity} en stock`}
+                          </span>
+                        )}
+                        {item.aisle && (
+                          <span className="text-[9px] bg-zinc-100 text-zinc-700 px-1.5 py-0.2 rounded">
+                            {item.aisle}
+                          </span>
+                        )}
+                        {item.isPrescriptionRequired && (
+                          <span className="text-[9px] bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.2 rounded font-bold">
+                            📋 Ordonnance requise
+                          </span>
+                        )}
+                        {item.originHalal && (
+                          <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">
+                            🥩 100% Halal
+                          </span>
+                        )}
+                        {item.expirationDate && (
+                          <span className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.2 rounded">
+                            📅 DLC: {item.expirationDate}
+                          </span>
+                        )}
+                      </div>
+
                       {item.salesCount && (
                         <span className="text-[10px] text-[#648692] block mt-0.5">{item.salesCount}</span>
                       )}
@@ -301,14 +426,24 @@ export const StoreDetailScreen: React.FC<Props> = React.memo(({
                           className="flex items-center gap-1.5 bg-[#F8F4EC] rounded-full p-0.5 border border-[#EADBCE]"
                         >
                           <button
-                            onClick={() => onUpdateCartQuantity(item.id, -1)}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateCartQuantity(item.id, -1);
+                            }}
+                            aria-label="Diminuer la quantité"
                             className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[#0A2B35] shadow-xs active:scale-95 cursor-pointer"
                           >
                             <Minus size={12} className="text-[#0A2B35]" />
                           </button>
                           <span className="text-xs font-bold text-[#0A2B35] px-0.5">{qtyInCart}</span>
                           <button
-                            onClick={() => onOpenDishCustomization(item.id)}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateCartQuantity(item.id, 1);
+                            }}
+                            aria-label="Augmenter la quantité"
                             className="btn-gradient-primary w-5 h-5 rounded-full flex items-center justify-center shadow-xs active:scale-95 cursor-pointer"
                           >
                             <Plus size={12} className="text-[#071E26]" />
@@ -321,6 +456,7 @@ export const StoreDetailScreen: React.FC<Props> = React.memo(({
                             e.stopPropagation();
                             onOpenDishCustomization(item.id);
                           }}
+                          aria-label="Ajouter au panier"
                           className="btn-gradient-primary w-6 h-6 rounded-full flex items-center justify-center shadow-xs active:scale-90 transition-transform cursor-pointer"
                         >
                           <Plus size={14} className="text-[#071E26]" />

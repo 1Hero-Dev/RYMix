@@ -27,6 +27,7 @@ import {
   Bell,
   BellRing,
   ShieldAlert,
+  Smartphone,
 } from 'lucide-react';
 import { Persona } from '../types';
 import { useLocalDatabase } from '../db/useLocalDatabase';
@@ -42,6 +43,7 @@ interface Props {
   onOpenFAQ?: () => void;
   onOpenPointsHistory?: () => void;
   onOpenNotificationsModal?: () => void;
+  onOpenBffModal?: () => void;
 }
 
 export const UserProfileScreen: React.FC<Props> = ({
@@ -52,6 +54,7 @@ export const UserProfileScreen: React.FC<Props> = ({
   onOpenFAQ,
   onOpenPointsHistory,
   onOpenNotificationsModal,
+  onOpenBffModal,
 }) => {
   const { fidelityProfile, purchasingHistory, merchantReviews, courierReviews } = useLocalDatabase();
   const {
@@ -349,6 +352,31 @@ export const UserProfileScreen: React.FC<Props> = ({
               </div>
             )}
           </div>
+
+          {/* Mobile BFF Architecture & Network Optimization Link */}
+          {onOpenBffModal && (
+            <div
+              id="profile-btn-open-bff"
+              onClick={onOpenBffModal}
+              className="p-3.5 flex items-center justify-between hover:bg-[#F8F4EC] cursor-pointer border-b border-[#EADBCE]/60 transition-colors"
+            >
+              <div className="flex items-center gap-2.5 text-[#0A2B35] font-medium">
+                <Smartphone size={16} className="text-[#00B578]" />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-zinc-900">Passerelle BFF Mobile</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                      Actif
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#648692]">
+                    Économie de données cellulaires (68%) & ETag cache
+                  </p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-[#648692]" />
+            </div>
+          )}
 
           {onOpenFAQ && (
             <div

@@ -13,6 +13,7 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 import { httpSmsService } from '../services/httpSmsService';
+import { BusinessCategory } from '../types';
 
 export type UserRole = 'customer' | 'driver' | 'shop' | 'admin';
 
@@ -38,6 +39,8 @@ export interface UserProfile {
   phone?: string;
   wilaya: string;
   commune?: string;
+  businessCategory?: BusinessCategory;
+  storeId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -56,7 +59,8 @@ interface AuthContextType {
     role: UserRole,
     phone?: string,
     wilaya?: string,
-    commune?: string
+    commune?: string,
+    businessCategory?: BusinessCategory
   ) => Promise<void>;
   sendPhoneOtp: (phone: string) => Promise<{ success: boolean; simulatedCode?: string; message: string }>;
   verifyPhoneOtpAndSignIn: (
@@ -64,7 +68,8 @@ interface AuthContextType {
     otpCode: string,
     displayName?: string,
     role?: UserRole,
-    commune?: string
+    commune?: string,
+    businessCategory?: BusinessCategory
   ) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -358,6 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = async (desiredRole: UserRole = 'customer') => {
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
       const fbUser = result.user;
       const userDocRef = doc(db, 'users', fbUser.uid);
@@ -382,7 +388,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setProfile(newProfile);
     } catch (error: any) {
-      console.error('Google Sign-In error:', error);
+      const code = error?.code || '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // Normal user action: closed or dismissed popup, not an unhandled application error
+        console.info('Google Sign-In popup dismissed by user.');
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        console.warn('Google Sign-In popup was blocked by browser or iframe sandbox policy.');
+        throw error;
+      }
+      console.warn('Google Sign-In notice:', error?.message || error);
       throw error;
     }
   };
@@ -429,7 +445,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role: UserRole = 'customer',
     phone?: string,
     wilaya = 'Mila (Wilaya 43)',
-    commune = 'Mila Centre'
+    commune = 'Mila Centre',
+    businessCategory?: BusinessCategory
   ) => {
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
@@ -447,6 +464,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone: phone ? httpSmsService.normalizeAlgerianPhone(phone) : '+213 550 00 00 00',
         wilaya,
         commune,
+        businessCategory: role === 'shop' ? (businessCategory || 'restaurant') : undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -498,7 +516,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     otpCode: string,
     displayName?: string,
     desiredRole: UserRole = 'customer',
-    commune = 'Mila Centre'
+    commune = 'Mila Centre',
+    businessCategory?: BusinessCategory
   ) => {
     const normalized = httpSmsService.normalizeAlgerianPhone(rawPhone);
     let storedOtp: { phone: string; code: string; expiresAt: number } | null = null;
@@ -544,6 +563,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phone: normalized,
       wilaya: 'Mila (Wilaya 43)',
       commune,
+      businessCategory: desiredRole === 'shop' ? (businessCategory || 'restaurant') : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

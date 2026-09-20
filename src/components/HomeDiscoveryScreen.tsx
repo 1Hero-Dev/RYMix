@@ -1224,6 +1224,10 @@ export const HomeDiscoveryScreen: React.FC<Props> = React.memo(({
                     </span>
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectDishToCustomize(store, item.id);
+                      }}
                       className="btn-gradient-primary w-5 h-5 rounded-full flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform cursor-pointer"
                       aria-label={`Ajouter ${item.name}`}
                     >

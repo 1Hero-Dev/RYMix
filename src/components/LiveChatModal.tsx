@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatMessage } from '../types';
 import { LazyImage } from './common/LazyImage';
-import { ArrowLeft, Phone, Send, Mic, Image, Sparkles, CheckCheck } from 'lucide-react';
+import { ArrowLeft, Phone, Send, Mic, Image, Sparkles, CheckCheck, Check, X } from 'lucide-react';
 
 interface Props {
   messages: ChatMessage[];
@@ -19,6 +19,22 @@ export const LiveChatModal: React.FC<Props> = ({
   courierPhone,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isRecordingAudio) {
+      interval = setInterval(() => {
+        setRecordingSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      setRecordingSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecordingAudio]);
 
   const quickReplies = [
     '🔔 Sonnez 2 fois à l\'interphone B14',
@@ -35,6 +51,18 @@ export const LiveChatModal: React.FC<Props> = ({
 
   const handleQuickSend = (text: string) => {
     onSendMessage(text);
+  };
+
+  const handleFinishVoiceRecord = () => {
+    const duration = Math.max(1, recordingSeconds);
+    onSendMessage(`🎤 Note vocale (${duration}s) transmise`);
+    setIsRecordingAudio(false);
+    setRecordingSeconds(0);
+  };
+
+  const handleCancelVoiceRecord = () => {
+    setIsRecordingAudio(false);
+    setRecordingSeconds(0);
   };
 
   return (
@@ -133,38 +161,66 @@ export const LiveChatModal: React.FC<Props> = ({
 
         {/* Chat Input Bar */}
         <footer className="p-2.5 bg-white border-t border-[#EADBCE] shrink-0">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSend();
-            }}
-            className="flex items-center gap-2"
-          >
-            <button
-              type="button"
-              className="w-8 h-8 rounded-full bg-[#F8F4EC] flex items-center justify-center text-[#648692] hover:text-[#0A2B35] cursor-pointer"
-              aria-label="Enregistrer un vocal"
+          {isRecordingAudio ? (
+            <div className="flex items-center justify-between px-3 py-2 bg-rose-50 border border-rose-200 rounded-full animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                <span>Enregistrement 0:0{recordingSeconds}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelVoiceRecord}
+                  className="text-xs text-zinc-500 hover:text-zinc-800 font-semibold px-2 py-1 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinishVoiceRecord}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
+                >
+                  <Check size={13} />
+                  <span>Envoyer</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              className="flex items-center gap-2"
             >
-              <Mic size={17} />
-            </button>
+              <button
+                type="button"
+                onClick={() => setIsRecordingAudio(true)}
+                className="w-8 h-8 rounded-full bg-[#F8F4EC] hover:bg-[#EADBCE] flex items-center justify-center text-[#648692] hover:text-[#0A2B35] transition-colors cursor-pointer"
+                aria-label="Enregistrer un vocal"
+                title="Enregistrer une note vocale"
+              >
+                <Mic size={17} />
+              </button>
 
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Écrire un message à Karim..."
-              className="flex-1 bg-[#F8F4EC] rounded-full px-3.5 py-2 text-xs text-[#0A2B35] placeholder:text-[#648692] focus:outline-none focus:ring-1 focus:ring-[#D9943B]"
-            />
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Écrire un message à Karim..."
+                className="flex-1 bg-[#F8F4EC] rounded-full px-3.5 py-2 text-xs text-[#0A2B35] placeholder:text-[#648692] focus:outline-none focus:ring-1 focus:ring-[#D9943B]"
+              />
 
-            <button
-              type="submit"
-              disabled={!inputText.trim()}
-              className="w-9 h-9 rounded-full bg-[#0A2B35] disabled:bg-[#EADBCE] disabled:text-[#648692] text-[#D9943B] flex items-center justify-center shadow-xs active:scale-95 transition-all cursor-pointer"
-              aria-label="Envoyer"
-            >
-              <Send size={15} />
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={!inputText.trim()}
+                className="w-9 h-9 rounded-full bg-[#0A2B35] disabled:bg-[#EADBCE] disabled:text-[#648692] text-[#D9943B] flex items-center justify-center shadow-xs active:scale-95 transition-all cursor-pointer"
+                aria-label="Envoyer"
+              >
+                <Send size={15} />
+              </button>
+            </form>
+          )}
         </footer>
       </div>
     </div>

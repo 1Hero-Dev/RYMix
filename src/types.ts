@@ -126,6 +126,26 @@ export interface MenuItemOptionGroup {
   options: MenuItemOption[];
 }
 
+export type BusinessCategory =
+  | 'restaurant'
+  | 'grocery'
+  | 'bakery'
+  | 'pharmacy'
+  | 'butcher'
+  | 'artisan';
+
+export interface BusinessCategoryConfig {
+  id: BusinessCategory;
+  nameFr: string;
+  nameAr: string;
+  description: string;
+  badgeLabel: string;
+  primaryCatalogName: string;
+  secondaryTools: string[];
+  defaultCategories: string[];
+  defaultPrepOrDeliveryMinutes: number;
+}
+
 export interface MenuItem {
   id: string;
   storeId: string;
@@ -140,6 +160,36 @@ export interface MenuItem {
   salesCount?: string;
   praiseRate?: string;
   optionGroups?: MenuItemOptionGroup[];
+
+  // Category-tailored publishing fields
+  // Épicerie & Supérette (Grocery & Retail Inventory)
+  stockQuantity?: number; // Stock actuel en rayon/réserve
+  stockThreshold?: number; // Seuil critique d'alerte rupture (ex: < 5)
+  unit?: string; // 'pièce' | 'kg' | 'g' | 'L' | 'bouteille' | 'paquet' | 'boîte' | 'pack'
+  sku?: string; // Code-barre ou référence article
+  expiryDate?: string; // DLC / DLUO (ex: 2026-11-20)
+  expirationDate?: string;
+  aisle?: string; // Rayon en magasin (ex: Produits Frais, Épicerie Salée)
+  isOrganicOrLocal?: boolean; // Label terroir / bio local
+  isPopular?: boolean;
+
+  // Restaurant & Restauration Rapide
+  prepTimeMinutes?: number; // Temps de cuisson/préparation en minutes
+  spiciness?: 'none' | 'mild' | 'spicy' | 'extra_spicy'; // Niveau de piquant
+  isSpicy?: boolean;
+  spiceLevel?: string;
+  dishCourse?: 'entree' | 'plat' | 'dessert' | 'boisson' | 'formule';
+  isHalal?: boolean;
+  originHalal?: boolean;
+  allowChefRemark?: boolean; // Permet remarques client (ex: "sans oignon")
+
+  // Boulangerie & Pâtisserie
+  bakingBatchTime?: string; // Horaire de fournée (ex: "Fournée de 07h00")
+
+  // Pharmacie & Parapharmacie
+  requiresPrescription?: boolean; // Ordonnance médicale requise
+  isPrescriptionRequired?: boolean;
+  dosageFormat?: string; // Format & conditionnement (ex: "Boîte de 30 comprimés")
 }
 
 export interface StorePromotion {
@@ -156,6 +206,7 @@ export interface Store {
   id: string;
   name: string;
   category: string;
+  businessCategory?: BusinessCategory;
   rating: number;
   reviewCount: string;
   deliveryTimeMin: number;
@@ -178,6 +229,10 @@ export interface Store {
   menuCategories: string[];
   items: MenuItem[];
   promotion?: StorePromotion;
+  // Category-specific store metadata
+  inventoryThresholdDefault?: number;
+  hasKdsKitchenPrinter?: boolean;
+  allowsPrescriptionUpload?: boolean;
 }
 
 export interface CartItemOptionSelected {

@@ -50,7 +50,7 @@ import {
 import { NotificationsModal } from './components/NotificationsModal';
 import { adminService, ADMIN_UPDATED_EVENT } from './services/adminService';
 import { apiClient } from './services/apiClient';
-import { HelpCircle, History, Sparkles, BellRing, AlertTriangle } from 'lucide-react';
+import { HelpCircle, History, BellRing, AlertTriangle } from 'lucide-react';
 
 // Asynchronously loaded secondary views & heavy modals to dramatically minimize initial bundle size
 const StoreDetailScreen = React.lazy(() =>
@@ -101,6 +101,9 @@ const AdminAppView = React.lazy(() =>
 const TechStackRadarModal = React.lazy(() =>
   import('./components/TechStackRadarModal').then((m) => ({ default: m.TechStackRadarModal }))
 );
+const MobileBffInspectorModal = React.lazy(() =>
+  import('./components/MobileBffInspectorModal').then((m) => ({ default: m.MobileBffInspectorModal }))
+);
 const OrderRatingModal = React.lazy(() =>
   import('./components/OrderRatingModal').then((m) => ({ default: m.OrderRatingModal }))
 );
@@ -141,6 +144,7 @@ function AppContent() {
   const [selectedProRoleInitial, setSelectedProRoleInitial] = useState<Persona | undefined>(undefined);
   const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('ONLINE');
   const [showTechStackModal, setShowTechStackModal] = useState(false);
+  const [showBffModal, setShowBffModal] = useState(false);
   const [customerTab, setCustomerTab] = useState<CustomerTab>('home');
   // Default to 'tabs' so the customer lands immediately on the customer homepage
   const [customerView, setCustomerView] = useState<CustomerView>('tabs');
@@ -758,14 +762,6 @@ function AppContent() {
                         <span className="text-[10px] bg-rose-800 px-2 py-0.5 rounded font-mono uppercase">Admin Pause</span>
                       </div>
                     )}
-
-                    {/* Admin Global Announcement Banner */}
-                    {!adminSettings.maintenanceMode && (adminSettings.announcementBannerText || adminSettings.announcementBanner) && (
-                      <div className="bg-gradient-to-r from-amber-600 via-[#D9943B] to-amber-600 text-[#071E26] px-4 py-1.5 text-xs font-bold flex items-center justify-center gap-2 shadow-xs">
-                        <Sparkles size={13} className="shrink-0" />
-                        <span className="truncate">{adminSettings.announcementBannerText || adminSettings.announcementBanner}</span>
-                      </div>
-                    )}
                   </>
                 )}
 
@@ -952,6 +948,7 @@ function AppContent() {
                       onOpenFAQ={() => setCustomerView('faq')}
                       onOpenPointsHistory={() => setCustomerView('points_history')}
                       onOpenNotificationsModal={() => setShowNotificationsModal(true)}
+                      onOpenBffModal={() => setShowBffModal(true)}
                     />
                   </React.Suspense>
                 )}
@@ -1080,6 +1077,16 @@ function AppContent() {
             <TechStackRadarModal
               isOpen={showTechStackModal}
               onClose={() => setShowTechStackModal(false)}
+            />
+          </React.Suspense>
+        )}
+
+        {/* Mobile BFF Inspector Modal */}
+        {showBffModal && (
+          <React.Suspense fallback={null}>
+            <MobileBffInspectorModal
+              isOpen={showBffModal}
+              onClose={() => setShowBffModal(false)}
             />
           </React.Suspense>
         )}

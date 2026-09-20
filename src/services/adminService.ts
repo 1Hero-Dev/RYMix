@@ -312,19 +312,18 @@ export const adminService = {
 
   addMenuItem(
     storeId: string,
-    itemData: {
+    itemData: Partial<MenuItem> & {
       name: string;
       description: string;
       price: number;
       category: string;
-      imageUrl?: string;
-      isPopular?: boolean;
     }
   ): MenuItem {
     const stores = this.getStores();
     const store = stores.find((s) => s.id === storeId);
     const newItem: MenuItem = {
-      id: `item-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+      ...itemData,
+      id: itemData.id || `item-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
       storeId,
       name: itemData.name.trim(),
       description: itemData.description.trim(),
@@ -333,8 +332,8 @@ export const adminService = {
       imageUrl:
         itemData.imageUrl ||
         'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
-      isAvailable: true,
-      badge: itemData.isPopular ? 'Populaire' : undefined,
+      isAvailable: itemData.isAvailable ?? true,
+      badge: itemData.badge || (itemData.isPopular ? 'Populaire' : undefined),
     };
 
     if (store) {

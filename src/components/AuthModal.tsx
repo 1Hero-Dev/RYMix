@@ -18,10 +18,14 @@ import {
   RefreshCw,
   Send,
   MapPin,
+  ExternalLink,
+  AlertTriangle,
 } from 'lucide-react';
 import { useFirebaseAuth, UserRole } from '../firebase/AuthContext';
 import { MILA_NEIGHBORHOODS } from '../data/mockData';
 import { RymGazelleIcon } from './RymGazelleIcon';
+import { BusinessCategory } from '../types';
+import { BUSINESS_CATEGORIES } from '../data/businessCategories';
 
 interface Props {
   isOpen: boolean;
@@ -53,6 +57,7 @@ export const AuthModal: React.FC<Props> = ({
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [method, setMethod] = useState<AuthMethod>('phone');
   const [role, setRole] = useState<UserRole>(initialRole);
+  const [businessCategory, setBusinessCategory] = useState<BusinessCategory>('restaurant');
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -74,6 +79,7 @@ export const AuthModal: React.FC<Props> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
+  const [popupBlocked, setPopupBlocked] = useState(false);
 
   if (!isOpen) return null;
 
@@ -126,7 +132,12 @@ export const AuthModal: React.FC<Props> = ({
 
     setIsSubmitting(true);
     try {
-      await verifyPhoneOtpAndSignIn(phone, otpCode, displayName || undefined, role, commune);
+      if (role === 'shop') {
+        try {
+          localStorage.setItem('rym_merchant_category', businessCategory);
+        } catch {}
+      }
+      await verifyPhoneOtpAndSignIn(phone, otpCode, displayName || undefined, role, commune, role === 'shop' ? businessCategory : undefined);
       setSuccessMessage('Connexion réussie ! Bienvenue sur RYM Super-App.');
       setTimeout(() => {
         onSuccess?.();
@@ -166,11 +177,16 @@ export const AuthModal: React.FC<Props> = ({
 
     setIsSubmitting(true);
     try {
+      if (role === 'shop') {
+        try {
+          localStorage.setItem('rym_merchant_category', businessCategory);
+        } catch {}
+      }
       if (mode === 'signin') {
         await signInWithEmail(email, password);
         setSuccessMessage('Connexion réussie ! Heureux de vous revoir.');
       } else {
-        await signUpWithEmail(email, password, displayName, role, phone, 'Ahmed Rachedi', commune);
+        await signUpWithEmail(email, password, displayName, role, phone, 'Ahmed Rachedi', commune, role === 'shop' ? businessCategory : undefined);
         setSuccessMessage('Compte créé avec succès ! Bienvenue dans la communauté Ahmed Rachedi.');
       }
       setTimeout(() => {
@@ -197,6 +213,7 @@ export const AuthModal: React.FC<Props> = ({
 
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
+    setPopupBlocked(false);
     setIsSubmitting(true);
     try {
       await signInWithGoogle(role);
@@ -206,8 +223,14 @@ export const AuthModal: React.FC<Props> = ({
         onClose();
       }, 700);
     } catch (err: any) {
-      if (err?.code !== 'auth/popup-closed-by-user') {
-        setErrorMessage('Erreur lors de la connexion Google.');
+      const code = err?.code || '';
+      if (code === 'auth/popup-blocked') {
+        setPopupBlocked(true);
+        setErrorMessage(
+          'La fenêtre de connexion Google a été bloquée par le navigateur. Vous pouvez ouvrir l\'application dans un nouvel onglet, autoriser les fenêtres popups, ou utiliser la connexion par SMS / Email.'
+        );
+      } else if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
+        setErrorMessage(err?.message || 'Erreur lors de la connexion Google.');
       }
     } finally {
       setIsSubmitting(false);
@@ -401,6 +424,53 @@ export const AuthModal: React.FC<Props> = ({
                   <span className="text-[11px]">Commerçant</span>
                 </button>
               </div>
+
+              {/* Dynamic Business Category Selector for Merchants */}
+              {role === 'shop' && (
+                <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-[#D9943B]" />
+                      <span>Catégorie de votre commerce :</span>
+                    </label>
+                    <span className="text-[10px] text-amber-800 font-semibold bg-white/80 px-2 py-0.5 rounded-md border border-amber-200">
+                      Outils adaptés
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {Object.values(BUSINESS_CATEGORIES).map((cat) => {
+                      const isSelected = businessCategory === cat.id;
+                      const emojiMap: Record<string, string> = {
+                        restaurant: '🍽️',
+                        grocery: '🛒',
+                        bakery: '🥐',
+                        pharmacy: '💊',
+                        butcher: '🥩',
+                        artisan: '🏺',
+                      };
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setBusinessCategory(cat.id)}
+                          className={`p-2 rounded-xl text-left border transition-all flex items-start gap-2 cursor-pointer ${
+                            isSelected
+                              ? 'bg-white border-[#D9943B] text-zinc-900 font-bold shadow-xs ring-1 ring-[#D9943B]'
+                              : 'bg-white/60 border-amber-200/80 text-zinc-600 hover:bg-white'
+                          }`}
+                        >
+                          <span className="text-base leading-none mt-0.5">{emojiMap[cat.id] || '🏬'}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold truncate leading-tight">{cat.nameFr}</p>
+                            <p className="text-[9px] text-zinc-500 truncate leading-tight">{cat.catalogTabLabel}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -727,6 +797,42 @@ export const AuthModal: React.FC<Props> = ({
             </svg>
             <span>Continuer avec Google</span>
           </button>
+
+          {/* Fallback helper when browser/iframe blocks popup */}
+          {popupBlocked && (
+            <div className="mt-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs animate-in fade-in duration-150">
+              <div className="flex items-start gap-2 text-amber-900">
+                <AlertTriangle size={15} className="shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="font-bold text-[11px]">Fenêtre popup bloquée par le navigateur</p>
+                  <p className="text-[10px] text-amber-800 leading-snug mt-0.5">
+                    Dans les aperçus intégrés (iframes), Google OAuth requiert d'ouvrir l'application dans un onglet autonome :
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="flex-1 py-1.5 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                >
+                  <ExternalLink size={12} />
+                  <span>Ouvrir dans un nouvel onglet</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMethod('phone');
+                    setPopupBlocked(false);
+                    setErrorMessage(null);
+                  }}
+                  className="py-1.5 px-2.5 bg-white border border-amber-300 text-amber-900 hover:bg-amber-100/50 rounded-lg font-bold text-[11px] cursor-pointer"
+                >
+                  Via SMS
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Quick Demo Role Profiles for immediate trial */}
           <div className="pt-2 border-t border-[#EADBCE]">

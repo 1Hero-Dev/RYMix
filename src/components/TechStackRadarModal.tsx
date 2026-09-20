@@ -16,6 +16,8 @@ import {
   Link,
   RefreshCw,
   Zap,
+  Smartphone,
+  Layers,
 } from 'lucide-react';
 import { LAUNCH_MAX_RADIUS_METERS } from '../utils/orderStateMachine';
 import {
@@ -25,6 +27,7 @@ import {
   DEFAULT_DEV_REALTIME_HTTP_URL,
   DEFAULT_DEV_REALTIME_WS_URL,
 } from '../utils/localRealtimeSimulator';
+import { mobileBffClient } from '../services/mobileBffClient';
 
 interface Props {
   isOpen: boolean;
@@ -32,7 +35,7 @@ interface Props {
 }
 
 export const TechStackRadarModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'stack' | 'radar' | 'prisma' | 'urls' | 'cod'>('urls');
+  const [activeTab, setActiveTab] = useState<'stack' | 'radar' | 'prisma' | 'urls' | 'cod' | 'bff'>('urls');
   const [testDistance, setTestDistance] = useState<number>(1450);
   const [couriers, setCouriers] = useState<LocalCourierTelemetryPing[]>([]);
   const [dbUrl, setDbUrl] = useState(localRealtimeDispatchService.getDatabaseUrl());
@@ -148,6 +151,15 @@ export const TechStackRadarModal: React.FC<Props> = ({ isOpen, onClose }) => {
           >
             <Banknote size={13} />
             <span>COD Launch</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('bff')}
+            className={`py-1.5 px-2 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+              activeTab === 'bff' ? 'bg-[#0A2B35] text-[#00B578] shadow-xs' : 'text-[#648692] hover:text-[#0A2B35]'
+            }`}
+          >
+            <Smartphone size={13} />
+            <span>BFF Mobile</span>
           </button>
         </div>
 
@@ -573,6 +585,92 @@ export const TechStackRadarModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 <div>1. Client prépare la monnaie exacte indiquée sur l'écran.</div>
                 <div>2. Le livreur valide la remise du sac scellé et la collecte des espèces.</div>
                 <div>3. La transition d'état passe immédiatement à <code className="font-mono bg-white px-1 border rounded">COLLECTED</code> avec audit log.</div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: BACKEND-FOR-FRONTEND (BFF) MOBILE */}
+          {activeTab === 'bff' && (
+            <div className="space-y-3">
+              <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl flex items-start gap-2.5">
+                <Smartphone size={20} className="text-[#00B578] shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-emerald-950 text-xs">
+                      Passerelle BFF Mobile (Backend-for-Frontend)
+                    </h4>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                      Port 3000 /api/bff/mobile
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
+                    Couche intermédiaire consolidée : 1 seule requête d'accueil au lieu de 4, économie de 68% de bande passante cellulaire et revalidation HTTP ETag (304).
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Specs Grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 bg-white border border-neutral-200 rounded-xl space-y-0.5">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Consolidation</span>
+                  <div className="text-sm font-extrabold text-zinc-900">1 aller-retour</div>
+                  <p className="text-[10px] text-zinc-500">Home + Promos + Commerces + Fidélité</p>
+                </div>
+                <div className="p-2.5 bg-white border border-neutral-200 rounded-xl space-y-0.5">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Optimisation Données</span>
+                  <div className="text-sm font-extrabold text-emerald-600">~68% d'économie</div>
+                  <p className="text-[10px] text-zinc-500">Payload allégé pour terminaux 3G/4G</p>
+                </div>
+              </div>
+
+              {/* Endpoints List */}
+              <div className="p-3 bg-white border border-neutral-200 rounded-2xl space-y-2">
+                <span className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
+                  <Layers size={13} className="text-[#00B578]" />
+                  Endpoints Actifs Montés sur le Serveur :
+                </span>
+                <div className="space-y-1 font-mono text-[10px]">
+                  <div className="p-1.5 bg-neutral-50 rounded border border-neutral-100 flex items-center justify-between">
+                    <span className="text-blue-700 font-bold">GET /api/bff/mobile/home</span>
+                    <span className="text-zinc-500 font-sans text-[10px]">Flux d'accueil consolidé + ETag</span>
+                  </div>
+                  <div className="p-1.5 bg-neutral-50 rounded border border-neutral-100 flex items-center justify-between">
+                    <span className="text-blue-700 font-bold">GET /api/bff/mobile/config</span>
+                    <span className="text-zinc-500 font-sans text-[10px]">Handshake version & Wilaya 43</span>
+                  </div>
+                  <div className="p-1.5 bg-neutral-50 rounded border border-neutral-100 flex items-center justify-between">
+                    <span className="text-emerald-700 font-bold">POST /api/bff/mobile/quote</span>
+                    <span className="text-zinc-500 font-sans text-[10px]">Devis panier certifié DZD</span>
+                  </div>
+                  <div className="p-1.5 bg-neutral-50 rounded border border-neutral-100 flex items-center justify-between">
+                    <span className="text-emerald-700 font-bold">POST /api/bff/mobile/checkout</span>
+                    <span className="text-zinc-500 font-sans text-[10px]">Commande unique idempotente</span>
+                  </div>
+                  <div className="p-1.5 bg-neutral-50 rounded border border-neutral-100 flex items-center justify-between">
+                    <span className="text-blue-700 font-bold">GET /api/bff/mobile/orders/:id/live-status</span>
+                    <span className="text-zinc-500 font-sans text-[10px]">Suivi temps-réel coursier</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive test trigger */}
+              <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
+                <span className="text-[11px] text-zinc-600">
+                  Tester la réponse en direct :
+                </span>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await mobileBffClient.getMobileHome('all');
+                      alert(`[BFF Mobile Test Réussi !]\nLatence: ${res.latencyMs}ms\nCommerces: ${res.data.stores.length}\nÉconomie estimée: ${res.data.meta.networkDataSavings}\nCache ETag: ${res.fromCache ? 'OUI (304)' : 'NON (200)'}`);
+                    } catch (e: any) {
+                      alert('Erreur BFF: ' + e.message);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-[#00B578] hover:bg-[#009663] text-[#071E26] font-extrabold text-[11px] rounded-lg transition-colors cursor-pointer"
+                >
+                  Tester GET /home
+                </button>
               </div>
             </div>
           )}

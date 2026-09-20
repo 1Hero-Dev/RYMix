@@ -1,12 +1,26 @@
 import React from 'react';
-import { MerchantTab } from '../types';
-import { ChefHat, UtensilsCrossed, MessageSquare, BarChart3, Store } from 'lucide-react';
+import { MerchantTab, BusinessCategory } from '../types';
+import {
+  ChefHat,
+  UtensilsCrossed,
+  MessageSquare,
+  BarChart3,
+  Store,
+  ShoppingBasket,
+  Croissant,
+  Pill,
+  Beef,
+  Sparkles,
+  Boxes,
+} from 'lucide-react';
+import { BUSINESS_CATEGORIES } from '../data/businessCategories';
 
 interface Props {
   activeTab: MerchantTab;
   onSelectTab: (tab: MerchantTab) => void;
   pendingCount: number;
   unreadCount?: number;
+  businessCategory?: BusinessCategory;
 }
 
 export const MerchantBottomNavBar: React.FC<Props> = ({
@@ -14,18 +28,39 @@ export const MerchantBottomNavBar: React.FC<Props> = ({
   onSelectTab,
   pendingCount,
   unreadCount = 1,
+  businessCategory = 'restaurant',
 }) => {
+  const getCatalogTabConfig = () => {
+    switch (businessCategory) {
+      case 'grocery':
+        return { label: 'Inventaire', icon: Boxes };
+      case 'bakery':
+        return { label: 'Fournées', icon: Croissant };
+      case 'pharmacy':
+        return { label: 'Officine', icon: Pill };
+      case 'butcher':
+        return { label: 'Boucherie', icon: Beef };
+      case 'artisan':
+        return { label: 'Créations', icon: Sparkles };
+      case 'restaurant':
+      default:
+        return { label: 'Menu', icon: UtensilsCrossed };
+    }
+  };
+
+  const catalogTab = getCatalogTabConfig();
+
   const tabs = [
     {
       id: 'orders' as MerchantTab,
-      label: 'Commandes',
+      label: businessCategory === 'restaurant' ? 'Cuisine' : 'Commandes',
       icon: ChefHat,
       badge: pendingCount > 0 ? pendingCount : undefined,
     },
     {
       id: 'menu' as MerchantTab,
-      label: 'Menu',
-      icon: UtensilsCrossed,
+      label: catalogTab.label,
+      icon: catalogTab.icon,
     },
     {
       id: 'messages' as MerchantTab,
