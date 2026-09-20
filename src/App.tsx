@@ -50,7 +50,7 @@ import {
 import { NotificationsModal } from './components/NotificationsModal';
 import { adminService, ADMIN_UPDATED_EVENT } from './services/adminService';
 import { apiClient } from './services/apiClient';
-import { HelpCircle, History, Sparkles, BellRing } from 'lucide-react';
+import { HelpCircle, History, Sparkles, BellRing, AlertTriangle } from 'lucide-react';
 
 // Asynchronously loaded secondary views & heavy modals to dramatically minimize initial bundle size
 const StoreDetailScreen = React.lazy(() =>
@@ -145,10 +145,11 @@ function AppContent() {
   // Default to 'tabs' so the customer lands immediately on the customer homepage
   const [customerView, setCustomerView] = useState<CustomerView>('tabs');
 
-  // Stores & Location - Initialized with lightweight essential homepage data
-  const [stores, setStores] = useState<Store[]>(HOMEPAGE_ESSENTIAL_STORES);
+  // Stores & Location - Synchronized with admin-managed store state and settings
+  const [stores, setStores] = useState<Store[]>(() => adminService.getStores());
+  const [adminSettings, setAdminSettings] = useState(() => adminService.getSettings());
   const [selectedLocation, setSelectedLocation] = useState('Cité 500 Logements, Mila (43)');
-  const [activeStore, setActiveStore] = useState<Store>(HOMEPAGE_ESSENTIAL_STORES[0]);
+  const [activeStore, setActiveStore] = useState<Store>(() => adminService.getStores()[0] || HOMEPAGE_ESSENTIAL_STORES[0]);
 
   // Cart & Order
   const [cart, setCart] = useState<CartItem[]>([
@@ -245,6 +246,9 @@ function AppContent() {
       const domain = customEvent.detail?.domain;
       if (domain === 'stores' || !domain) {
         setStores([...adminService.getStores()]);
+      }
+      if (domain === 'settings' || !domain) {
+        setAdminSettings({ ...adminService.getSettings() });
       }
     };
     window.addEventListener(ADMIN_UPDATED_EVENT, handleAdminStateSync);
@@ -728,20 +732,41 @@ function AppContent() {
               <div className="flex-1 flex flex-col">
                 {/* Header (Only on Home & Discovery) */}
                 {(customerTab === 'home' || customerTab === 'discovery') && (
-                  <HeaderBar
-                    selectedLocation={selectedLocation}
-                    onSelectLocation={setSelectedLocation}
-                    onOpenNotifications={() => setShowNotificationsModal(true)}
-                    onOpenScanner={() => setShowScannerModal(true)}
-                    onOpenProfessionalAccounts={() => {
-                      setSelectedProRoleInitial(undefined);
-                      setShowProfessionalAccountsModal(true);
-                    }}
-                    onOpenAuth={() => {
-                      setAuthModalMode('signin');
-                      setShowAuthModal(true);
-                    }}
-                  />
+                  <>
+                    <HeaderBar
+                      selectedLocation={selectedLocation}
+                      onSelectLocation={setSelectedLocation}
+                      onOpenNotifications={() => setShowNotificationsModal(true)}
+                      onOpenScanner={() => setShowScannerModal(true)}
+                      onOpenProfessionalAccounts={() => {
+                        setSelectedProRoleInitial(undefined);
+                        setShowProfessionalAccountsModal(true);
+                      }}
+                      onOpenAuth={() => {
+                        setAuthModalMode('signin');
+                        setShowAuthModal(true);
+                      }}
+                    />
+
+                    {/* Admin Operational Emergency / Maintenance Banner */}
+                    {adminSettings.maintenanceMode && (
+                      <div className="bg-rose-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle size={15} className="text-amber-300 animate-bounce" />
+                          <span>Plateforme temporairement en maintenance à Ahmed Rachedi : les nouvelles commandes sont suspendues.</span>
+                        </div>
+                        <span className="text-[10px] bg-rose-800 px-2 py-0.5 rounded font-mono uppercase">Admin Pause</span>
+                      </div>
+                    )}
+
+                    {/* Admin Global Announcement Banner */}
+                    {!adminSettings.maintenanceMode && (adminSettings.announcementBannerText || adminSettings.announcementBanner) && (
+                      <div className="bg-gradient-to-r from-amber-600 via-[#D9943B] to-amber-600 text-[#071E26] px-4 py-1.5 text-xs font-bold flex items-center justify-center gap-2 shadow-xs">
+                        <Sparkles size={13} className="shrink-0" />
+                        <span className="truncate">{adminSettings.announcementBannerText || adminSettings.announcementBanner}</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Tab: Home (Primary Customer Homepage) */}

@@ -5,10 +5,11 @@ export type CustomerTab = 'home' | 'discovery' | 'orders' | 'messages' | 'profil
 export type CourierTab = 'missions' | 'batch' | 'active' | 'messages' | 'earnings' | 'profile';
 export type MerchantTab = 'orders' | 'menu' | 'messages' | 'analytics' | 'store';
 export type AdminTab =
-  | 'dispatch'
-  | 'orders'
+  | 'overview'
   | 'stores'
   | 'fleet'
+  | 'orders'
+  | 'dispatch'
   | 'users'
   | 'promos'
   | 'settlement'

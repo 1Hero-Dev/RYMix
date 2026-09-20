@@ -32,10 +32,12 @@ import {
   PhoneCall,
   ClipboardList,
   Layers,
+  LayoutDashboard,
 } from 'lucide-react';
 import { ALLOWED_TRANSITIONS, canTransitionOrder, rankCouriersForDispatch, LAUNCH_MAX_RADIUS_METERS } from '../utils/orderStateMachine';
 import { getLocalTelemetrySnapshot, LocalCourierTelemetryPing } from '../utils/localRealtimeSimulator';
 import { DatabaseInspectorModal } from './DatabaseInspectorModal';
+import { AdminOverviewTab } from './admin/AdminOverviewTab';
 import { AdminStoresTab } from './admin/AdminStoresTab';
 import { AdminOrdersTab } from './admin/AdminOrdersTab';
 import { AdminFleetTab } from './admin/AdminFleetTab';
@@ -67,7 +69,7 @@ export const AdminAppView: React.FC<Props> = ({
   onOpenHttpSms,
   onAddNewOrder,
 }) => {
-  const [activeTab, setActiveTab] = useState<AdminTab>('dispatch');
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(orders[0]?.id || null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -262,28 +264,18 @@ export const AdminAppView: React.FC<Props> = ({
       {/* Primary Navigation Tabs */}
       <nav className="px-4 sm:px-6 border-b border-zinc-800 bg-[#141619] flex gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto">
         <button
-          onClick={() => setActiveTab('dispatch')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
-            activeTab === 'dispatch' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          onClick={() => setActiveTab('overview')}
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'overview' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <Radio size={14} />
-          <span>Dispatch Radar</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('orders')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
-            activeTab === 'orders' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <ClipboardList size={14} />
-          <span>Commandes ({orders.length})</span>
+          <LayoutDashboard size={14} className="text-[#D9943B]" />
+          <span>Hub de Gestion (Général)</span>
         </button>
 
         <button
           onClick={() => setActiveTab('stores')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'stores' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -293,7 +285,7 @@ export const AdminAppView: React.FC<Props> = ({
 
         <button
           onClick={() => setActiveTab('fleet')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'fleet' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -302,8 +294,28 @@ export const AdminAppView: React.FC<Props> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('orders')}
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'orders' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <ClipboardList size={14} />
+          <span>Commandes ({orders.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('dispatch')}
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'dispatch' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Radio size={14} />
+          <span>Dispatch Radar</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('users')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'users' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -313,7 +325,7 @@ export const AdminAppView: React.FC<Props> = ({
 
         <button
           onClick={() => setActiveTab('promos')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'promos' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -323,7 +335,7 @@ export const AdminAppView: React.FC<Props> = ({
 
         <button
           onClick={() => setActiveTab('settlement')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'settlement' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -333,7 +345,7 @@ export const AdminAppView: React.FC<Props> = ({
 
         <button
           onClick={() => setActiveTab('settings')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'settings' ? 'border-[#D9943B] text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -343,7 +355,7 @@ export const AdminAppView: React.FC<Props> = ({
 
         <button
           onClick={() => setActiveTab('architecture')}
-          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors ${
+          className={`py-3 px-2 flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'architecture' ? 'border-[#00B578] text-white' : 'border-transparent text-emerald-400/80 hover:text-emerald-300'
           }`}
         >
@@ -357,6 +369,25 @@ export const AdminAppView: React.FC<Props> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 p-4 sm:p-6">
+        {/* 0. EXECUTIVE OVERVIEW & APP-WIDE MANAGEMENT HUB */}
+        {activeTab === 'overview' && (
+          <AdminOverviewTab
+            orders={orders}
+            stores={stores}
+            couriers={couriers}
+            users={users}
+            promos={promos}
+            settings={settings}
+            onNavigateTab={setActiveTab}
+            onRefreshStores={refreshStores}
+            onRefreshSettings={refreshSettings}
+            onOpenManualOrderModal={() => setShowManualOrderModal(true)}
+            onOpenTechStack={onOpenTechStack}
+            onOpenFirebase={onOpenFirebase}
+            onOpenHttpSms={onOpenHttpSms}
+            onOpenDbInspector={() => setShowDbInspector(true)}
+          />
+        )}
         {/* 1. DISPATCH TAB */}
         {activeTab === 'dispatch' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

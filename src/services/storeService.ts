@@ -1,5 +1,6 @@
 import { Store, Order, AvailableDeliveryPoolOrder, ChatMessage } from '../types';
 import { HOMEPAGE_ESSENTIAL_STORES, HOMEPAGE_ACTIVE_ORDER } from '../data/essentialHomeData';
+import { adminService } from './adminService';
 
 let fullDataCache: {
   MOCK_STORES: Store[];
@@ -25,9 +26,13 @@ async function loadFullMockData() {
 
 /**
  * Dynamically fetches full store data with all menu categories, items, and customization options.
- * Keeps customer homepage bundle lightweight.
+ * Synchronized with admin-managed store state.
  */
 export async function getFullStore(storeId: string): Promise<Store> {
+  const adminStores = adminService.getStores();
+  const foundAdmin = adminStores.find((s) => s.id === storeId);
+  if (foundAdmin) return foundAdmin;
+
   const cache = await loadFullMockData();
   const found = cache.MOCK_STORES.find((s) => s.id === storeId);
   if (found) return found;
@@ -35,6 +40,10 @@ export async function getFullStore(storeId: string): Promise<Store> {
 }
 
 export async function getAllFullStores(): Promise<Store[]> {
+  const adminStores = adminService.getStores();
+  if (adminStores && adminStores.length > 0) {
+    return adminStores;
+  }
   const cache = await loadFullMockData();
   return cache.MOCK_STORES;
 }

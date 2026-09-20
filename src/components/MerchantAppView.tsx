@@ -6,6 +6,7 @@ import { useLocalDatabase } from '../db/useLocalDatabase';
 import { merchantRatingsDB } from '../db/localDatabase';
 import { LazyImage } from './common/LazyImage';
 import { apiGateway } from '../services/apiGateway';
+import { adminService, ADMIN_UPDATED_EVENT } from '../services/adminService';
 
 /**
  * Identity used for the in-browser demo gateway only.
@@ -65,10 +66,25 @@ export const MerchantAppView: React.FC<Props> = ({
   const [orderStage, setOrderStage] = useState<'pending' | 'preparing' | 'ready'>('preparing');
   const [dailyTurnover, setDailyTurnover] = useState(52400);
 
-  // Local menu items for stock toggle simulation
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(MOCK_STORES[0].items);
+  // Local menu items synchronized with admin store catalog
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
+    const adminStores = adminService.getStores();
+    return adminStores[0]?.items || MOCK_STORES[0].items;
+  });
   const [printSuccessNotice, setPrintSuccessNotice] = useState<string | null>(null);
   const [incomingAlert, setIncomingAlert] = useState<{ orderNumber: string; total: number; customer: string } | null>(null);
+
+  // Sync menu when modified by Admin
+  useEffect(() => {
+    const handleAdminSync = () => {
+      const adminStores = adminService.getStores();
+      if (adminStores[0]?.items) {
+        setMenuItems([...adminStores[0].items]);
+      }
+    };
+    window.addEventListener(ADMIN_UPDATED_EVENT, handleAdminSync);
+    return () => window.removeEventListener(ADMIN_UPDATED_EVENT, handleAdminSync);
+  }, []);
 
   // Inbound order push subscription (Recommendation N6, C1)
   useEffect(() => {
