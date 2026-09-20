@@ -10,6 +10,8 @@
  * Balance is NEVER mutated directly without an audit transaction record.
  */
 
+import { outboxEventBus } from '../events/outboxEventBus';
+
 export type LoyaltyTransactionType = 'EARN_PURCHASE' | 'REDEEM_CHECKOUT' | 'BONUS_SIGNUP' | 'EXPIRED_ADJUSTMENT';
 
 export interface LoyaltyTransaction {
@@ -157,3 +159,21 @@ export class LoyaltyEngine {
     };
   }
 }
+
+// In-memory set for deduplicating delivered order events (Recommendation M3)
+const processedDeliveredOrderIds = new Set<string>();
+
+// Asynchronous Outbox Event Subscriber for decoupled loyalty point awarding
+outboxEventBus.subscribe('order.delivered', (event) => {
+  const { orderId, total, customerId } = event.payload || {};
+  if (!orderId || processedDeliveredOrderIds.has(orderId)) {
+    return; // Idempotent handling: ignore duplicate deliveries
+  }
+
+  processedDeliveredOrderIds.add(orderId);
+  const targetUserId = customerId || 'cust-amine';
+  const orderTotal = typeof total === 'number' ? total : 1000;
+
+  LoyaltyEngine.recordPurchaseEarn(targetUserId, orderId, orderTotal);
+});
+

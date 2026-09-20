@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Order, MenuItem, MerchantTab } from '../types';
 import { MerchantBottomNavBar } from './MerchantBottomNavBar';
 import { MOCK_STORES } from '../data/mockData';
 import { useLocalDatabase } from '../db/useLocalDatabase';
 import { merchantRatingsDB } from '../db/localDatabase';
 import { LazyImage } from './common/LazyImage';
+import { apiGateway } from '../services/apiGateway';
 import {
   ChefHat,
   Printer,
@@ -56,6 +57,21 @@ export const MerchantAppView: React.FC<Props> = ({
   // Local menu items for stock toggle simulation
   const [menuItems, setMenuItems] = useState<MenuItem[]>(MOCK_STORES[0].items);
   const [printSuccessNotice, setPrintSuccessNotice] = useState<string | null>(null);
+  const [incomingAlert, setIncomingAlert] = useState<{ orderNumber: string; total: number; customer: string } | null>(null);
+
+  // Inbound order push subscription (Recommendation N6, C1)
+  useEffect(() => {
+    const unsub = apiGateway.subscribeMerchantOrders('store-beni-haroun', (order) => {
+      if (order.status === 'PENDING' || order.status === 'CONFIRMED') {
+        setIncomingAlert({
+          orderNumber: order.orderNumber,
+          total: order.total,
+          customer: order.delivery?.dropoff?.recipientName || 'Client Ahmed Rachedi',
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Merchant messaging threads
   const [merchantThreads, setMerchantThreads] = useState([
@@ -161,9 +177,20 @@ export const MerchantAppView: React.FC<Props> = ({
 
   const toggleItemAvailability = (itemId: string) => {
     setMenuItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, isAvailable: !item.isAvailable } : item
-      )
+      prev.map((item) => {
+        if (item.id === itemId) {
+          const nextState = !item.isAvailable;
+          const session = {
+            userId: 'merchant-beni-haroun',
+            name: 'Chef Beni Haroun',
+            role: 'MERCHANT' as const,
+            token: 'jwt-merchant-token',
+          };
+          apiGateway.updateStoreItemAvailability(session, 'store-beni-haroun', itemId, nextState);
+          return { ...item, isAvailable: nextState };
+        }
+        return item;
+      })
     );
   };
 
@@ -227,6 +254,35 @@ export const MerchantAppView: React.FC<Props> = ({
           </div>
         </div>
       </header>
+
+      {/* Inbound Realtime Order Alert (Recommendation N6, C1) */}
+      {incomingAlert && (
+        <div className="bg-gradient-to-r from-amber-600 to-[#D9943B] text-[#071E26] px-4 py-2.5 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
+            <span className="font-extrabold text-xs">
+              NOUVELLE COMMANDE #{incomingAlert.orderNumber} • {incomingAlert.total} DZD ({incomingAlert.customer})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setOrderStage('pending');
+                setIncomingAlert(null);
+              }}
+              className="bg-[#071E26] text-white text-xs font-bold px-3 py-1 rounded-lg hover:bg-black cursor-pointer"
+            >
+              Traiter en cuisine
+            </button>
+            <button
+              onClick={() => setIncomingAlert(null)}
+              className="text-xs font-bold underline px-1 text-[#071E26] cursor-pointer"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Ticket Notification */}
       {printSuccessNotice && (

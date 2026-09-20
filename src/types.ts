@@ -295,7 +295,7 @@ export interface Order {
   estimatedDeliveryTimeRange?: string; // e.g. "12–18 mins"
   estimatedDeliveryTime: string;
   paymentMethod: 'COD'; // Cash On Delivery
-  paymentStatus: 'UNPAID' | 'COLLECTED';
+  paymentStatus: 'UNPAID' | 'COLLECTED' | 'PAID' | 'FAILED';
   delivery?: Delivery;
   courierId?: string;
   courierName?: string;

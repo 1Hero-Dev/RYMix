@@ -12,6 +12,7 @@ import { createOrderFulfillmentRecord } from '../domain/fulfillment';
 import { fidelityDB } from '../db/localDatabase';
 import { useLocalDatabase } from '../db/useLocalDatabase';
 import { adminService } from '../services/adminService';
+import { apiGateway } from '../services/apiGateway';
 import {
   ArrowLeft,
   MapPin,
@@ -182,7 +183,7 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
   const storeName = cartItems[0]?.storeName || 'Restaurant Ahmed Rachedi';
   const storeId = cartItems[0]?.storeId || 'store-beni-haroun';
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (adminService.getSettings().maintenanceMode) {
       setOrderPlacementError('Le service de commande est temporairement suspendu par l\'administrateur pour maintenance à Ahmed Rachedi.');
       setShowConfirmationReview(false);
@@ -197,172 +198,69 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
     }
 
     const idempotencyKey = generateIdempotencyKey('cust-amine');
-    const orderNumber = `#HB-${Math.floor(1000 + Math.random() * 9000)}`;
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Build immutable price & product snapshots for historical integrity
-    const snapshottedItems = createOrderItemSnapshots(cartItems);
-
-    // Build dedicated Delivery domain entity
-    const deliveryEntity: Delivery = {
-      id: `deliv-${Date.now()}`,
-      orderId: `order-${Date.now()}`,
-      courierId: 'courier-walid',
-      courierName: 'Walid M.',
-      courierPhone: '+213 550 88 99 00',
-      courierAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnLgieeCF8ANxDxGqfJBxx4kjN-psqMb4MO9qTa3aoO0Qsz5aYMyWF-4meTl3-YluN6pO1WvE3z8q13EjhO4ylotuROjN2F7b3cGzY6InATavSGNRiY81Abt6msgXrjxk1hJZh3ivc3Qg62zoChrbudeY-GLLB23Axh3UpzfYfLXjdMxaZU-7HXMBbw9EyBfXunbj3n_WZXmeMexp59kbQmk5YHH5YXHBP2O0vbMoPila0sJJxBx5A',
-      courierRating: 4.9,
-      courierVehicle: 'Scooter SYM Jet 14',
-      status: 'OFFERED',
-      pickup: {
-        storeId,
-        storeName,
-        address: 'Boulevard 1er Novembre 1954, Ahmed Rachedi',
-        landmark: 'En face de la Protection Civile',
-        phone: '+213 31 55 44 33',
-        lat: 36.4503,
-        lng: 6.2649,
-      },
-      dropoff: {
-        recipientName: deliveryAddress.recipientName || 'Amine B.',
-        phone: editPhone,
-        address: `${editStreet}, ${deliveryAddress.building || ''}`,
-        landmark: editLandmark,
-        lat: 36.4561,
-        lng: 6.2715,
-      },
-      feeSnapshot: deliveryFee,
-      distanceMeters: 1450,
-      estimatedDurationMin: 14,
-      dispatchedAt: nowTime,
-    };
-
-    // Redeem selected voucher in the fidelity database
-    if (selectedVoucherId) {
-      fidelityDB.redeemVoucher(selectedVoucherId);
-    }
-
-    const appliedDesc = selectedVoucher
-      ? selectedVoucher.title
-      : appliedPromo
-      ? appliedPromo.label
-      : deliveryDiscount > 0
-      ? 'Livraison offerte dès 1 200 DZD'
-      : undefined;
-
     const voucherCodeUsed = selectedVoucher ? selectedVoucher.code : appliedPromo ? appliedPromo.code : undefined;
 
-    const newOrder: Order = {
-      id: deliveryEntity.orderId,
-      idempotencyKey,
-      orderNumber,
-      storeId,
-      storeName,
-      storeCategory: 'Livraison Express Ahmed Rachedi',
-      storeImageUrl: cartItems[0]?.imageUrl || '',
-      items: snapshottedItems,
-      subtotal,
-      deliveryFee,
-      packagingFee,
-      discount: totalDiscount,
-      voucherCode: voucherCodeUsed,
-      appliedPromotionDescription: appliedDesc,
-      total: grandTotal,
-      status: 'CONFIRMED',
-      statusHistory: [
-        {
-          id: `hist-init-${Date.now()}`,
-          toStatus: 'CONFIRMED',
-          timestamp: nowTime,
-          actorRole: 'CUSTOMER',
-          actorName: deliveryAddress.recipientName || 'Amine B.',
-          note: 'Commande validée et confirmée (Paiement en espèces à la livraison)',
-        },
-      ],
-      createdAt: nowTime,
-      estimatedDeliveryTimeRange: '12–18 mins',
-      estimatedDeliveryTime: 'dans 15-20 mins',
-      paymentMethod: 'COD',
-      paymentStatus: 'UNPAID',
-      delivery: deliveryEntity,
-      courierId: 'courier-walid',
-      courierName: 'Walid M. (Ahmed Rachedi)',
-      courierPhone: '+213 551 23 45 67',
-      courierAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnLgieeCF8ANxDxGqfJBxx4kjN-psqMb4MO9qTa3aoO0Qsz5aYMyWF-4meTl3-YluN6pO1WvE3z8q13EjhO4ylotuROjN2F7b3cGzY6InATavSGNRiY81Abt6msgXrjxk1hJZh3ivc3Qg62zoChrbudeY-GLLB23Axh3UpzfYfLXjdMxaZU-7HXMBbw9EyBfXunbj3n_WZXmeMexp59kbQmk5YHH5YXHBP2O0vbMoPila0sJJxBx5A',
-      courierRating: 4.9,
-      courierVehicle: 'Scooter SYM Jet 14',
-      deliveryAddress: {
-        ...deliveryAddress,
-        wilaya: editWilaya,
-        commune: editCommune,
-        street: editStreet,
-        landmark: editLandmark,
-        phone: editPhone,
-      },
-      deliveryNotes,
-      cutleryOption: ecoCutlery,
-      statusTimeline: [
-        {
-          status: 'PENDING',
-          label: 'Commande transmise',
-          timestamp: nowTime,
-          completed: true,
-          current: false,
-        },
-        {
-          status: 'CONFIRMED',
-          label: 'Confirmée par le restaurant',
-          timestamp: nowTime,
-          completed: false,
-          current: true,
-        },
-        { status: 'PREPARING', label: 'En cuisine', timestamp: 'En attente', completed: false, current: false },
-        { status: 'PICKED_UP', label: 'Récupérée par le livreur', timestamp: 'En attente', completed: false, current: false },
-        { status: 'DELIVERING', label: 'En route vers votre adresse', timestamp: 'En attente', completed: false, current: false },
-        { status: 'ARRIVED', label: 'Arrivé sur place (20m)', timestamp: 'En attente', completed: false, current: false },
-        { status: 'CUSTOMER_CONFIRMED', label: 'Confirmation client', timestamp: 'En attente', completed: false, current: false },
-        { status: 'DELIVERED', label: 'Livrée avec remise espèces', timestamp: 'En attente', completed: false, current: false },
-      ],
-    };
-
-    // 1. Initialize Fulfillment Record (Recommendation #4: Food vs Shopping Fulfillment)
     try {
-      createOrderFulfillmentRecord(
-        newOrder.id,
-        newOrder.storeId,
-        newOrder.storeCategory,
-        newOrder.items
-      );
-    } catch (e) {
-      console.warn('Fulfillment record init:', e);
-    }
+      // Execute Authoritative Server-Side Checkout & Payment Orchestration (Recommendations C4, C5, C6, H1, H3)
+      const session = {
+        userId: 'cust-amine',
+        name: deliveryAddress.recipientName || 'Amine B.',
+        role: 'CUSTOMER' as const,
+        token: 'auth-jwt-token-customer',
+      };
 
-    // 2. Record Atomically in Outbox Event Bus (Recommendation #11 & #15)
-    try {
-      outboxEventBus.recordOutboxEvent(
-        'order.placed',
-        newOrder.id,
-        'ORDER',
-        {
-          orderId: newOrder.id,
-          orderNumber: newOrder.orderNumber,
-          storeId: newOrder.storeId,
-          totalAmountDZD: newOrder.total,
-          deliveryFeeDZD: newOrder.deliveryFee,
-          paymentMethod: 'COD',
+      const response = await apiGateway.submitCheckout(session, {
+        items: cartItems,
+        storeId,
+        storeName,
+        storeCategory: 'Livraison Express Ahmed Rachedi',
+        storeImageUrl: cartItems[0]?.imageUrl || '',
+        deliveryAddress: {
+          ...deliveryAddress,
+          wilaya: editWilaya,
+          commune: editCommune,
+          street: editStreet,
+          landmark: editLandmark,
+          phone: editPhone,
         },
-        {
-          role: 'CUSTOMER',
-          id: 'cust-current',
-          name: deliveryAddress.recipientName || 'Client Ahmed Rachedi',
-        },
-        { idempotencyKey }
-      );
-    } catch (e) {
-      console.warn('Outbox record error:', e);
-    }
+        deliveryNotes,
+        cutleryOption: ecoCutlery,
+        voucherCode: voucherCodeUsed,
+        paymentMethod: 'COD',
+        idempotencyKey,
+      });
 
-    onConfirmOrder(newOrder);
+      if (!response.success || !response.order) {
+        setIsSubmitting(false);
+        setOrderPlacementError(response.error || 'Erreur lors de la validation serveur de la commande.');
+        setShowConfirmationReview(false);
+        return;
+      }
+
+      // Redeem selected voucher in the client fidelity cache
+      if (selectedVoucherId) {
+        fidelityDB.redeemVoucher(selectedVoucherId);
+      }
+
+      // 1. Initialize Fulfillment Record for tracking
+      try {
+        createOrderFulfillmentRecord(
+          response.order.id,
+          response.order.storeId,
+          response.order.storeCategory,
+          response.order.items
+        );
+      } catch (e) {
+        console.warn('Fulfillment record init:', e);
+      }
+
+      setIsSubmitting(false);
+      onConfirmOrder(response.order);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setOrderPlacementError(err?.message || 'Erreur inattendue lors de la transmission.');
+      setShowConfirmationReview(false);
+    }
   };
 
   const handleSaveAddress = () => {

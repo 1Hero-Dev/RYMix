@@ -9,6 +9,7 @@ import { courierRatingsDB } from '../db/localDatabase';
 import { uploadProofOfDelivery, updateDriverLocation } from '../firebase/firebaseServices';
 import { convertToWebP } from '../utils/webpConverter';
 import { LazyImage } from './common/LazyImage';
+import { apiGateway, DeliveryJobOffer } from '../services/apiGateway';
 import {
   Bike,
   Power,
@@ -72,6 +73,43 @@ export const CourierAppView: React.FC<Props> = ({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [acceptedBundles, setAcceptedBundles] = useState<OptimizedRouteBundle[]>([]);
   const [bundleAlertToast, setBundleAlertToast] = useState<string | null>(null);
+  const [liveOffers, setLiveOffers] = useState<DeliveryJobOffer[]>([]);
+
+  // Subscribe to real-time Go Dispatch Engine job offers via API Gateway (Recommendation N5, C2)
+  useEffect(() => {
+    const unsub = apiGateway.subscribeCourierOffers((offers) => {
+      setLiveOffers(offers);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleAcceptLiveOffer = (offer: DeliveryJobOffer) => {
+    const session = {
+      userId: 'courier-walid-43',
+      name: 'Walid M.',
+      role: 'COURIER' as const,
+      token: 'jwt-courier-token-walid',
+    };
+    const res = apiGateway.courierAcceptOffer(session, offer.offerId);
+    if (res.success) {
+      setTodayEarnings((prev) => prev + offer.courierFeeDZD);
+      setBundleAlertToast(`✅ Mission #${offer.orderNumber} acceptée ! Rémunération : +${offer.courierFeeDZD} DZD.`);
+      onAcceptPoolOrder(offer.orderId);
+      setTimeout(() => setBundleAlertToast(null), 4500);
+    }
+  };
+
+  const handleDeclineLiveOffer = (offerId: string) => {
+    const session = {
+      userId: 'courier-walid-43',
+      name: 'Walid M.',
+      role: 'COURIER' as const,
+      token: 'jwt-courier-token-walid',
+    };
+    apiGateway.courierDeclineOffer(session, offerId);
+    setBundleAlertToast(`Offre déclinée.`);
+    setTimeout(() => setBundleAlertToast(null), 3000);
+  };
 
   const handleAcceptBundle = (bundle: OptimizedRouteBundle) => {
     setAcceptedBundles((prev) => [...prev, bundle]);
@@ -304,6 +342,59 @@ export const CourierAppView: React.FC<Props> = ({
             </div>
 
             {/* Batch Delivery Engine Corridor Banner */}
+            {liveOffers.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-400">
+                  <span className="flex items-center gap-1.5">
+                    <Zap size={14} className="animate-bounce" />
+                    Offres Dispatch Go en direct ({liveOffers.length})
+                  </span>
+                  <span className="text-[10px] bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded-full">
+                    Bail 60s
+                  </span>
+                </div>
+
+                {liveOffers.map((offer) => (
+                  <div
+                    key={offer.offerId}
+                    className="bg-gradient-to-br from-[#1E2024] to-[#141518] border-2 border-emerald-500/60 rounded-2xl p-4 shadow-xl space-y-3 animate-pulse-subtle"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded uppercase">
+                          Nouvelle Course Assignée • #{offer.orderNumber}
+                        </span>
+                        <h4 className="font-extrabold text-sm text-white mt-1">{offer.restaurantName}</h4>
+                        <p className="text-xs text-zinc-400">{offer.destinationAddress}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-emerald-400 font-extrabold text-base block">
+                          +{offer.courierFeeDZD} DZD
+                        </span>
+                        <span className="text-[10px] text-zinc-400">{offer.distanceKm} km</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-white/10 text-xs">
+                      <button
+                        onClick={() => handleAcceptLiveOffer(offer)}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>Accepter la course (+{offer.courierFeeDZD} DZD)</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeclineLiveOffer(offer.offerId)}
+                        className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        Refuser
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="bg-gradient-to-r from-[#0A2B35] via-[#114250] to-[#071E26] border border-[#D9943B]/40 rounded-2xl p-3 shadow-lg flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-[#D9943B] text-[#071E26] flex items-center justify-center font-black shrink-0 shadow-sm">

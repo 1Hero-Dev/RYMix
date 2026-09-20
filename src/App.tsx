@@ -43,7 +43,6 @@ import { purchasingHistoryDB } from './db/localDatabase';
 import { useGlobalHorizontalScroll } from './hooks/useGlobalHorizontalScroll';
 import { AuthProvider, UserRole, useAuth } from './firebase/AuthContext';
 import {
-  syncOrderToFirestore,
   sendPushNotification,
   onPushNotification,
   PushNotificationPayload,
@@ -295,8 +294,7 @@ function AppContent() {
     // Persist to local database (Purchasing History & Fidelity Points)
     purchasingHistoryDB.recordPurchaseFromOrder(newOrder);
 
-    // Sync to Cloud Firestore & Dispatch Firebase Push Notification
-    syncOrderToFirestore(newOrder);
+    // Order projection to Cloud Firestore is handled server-side by apiGateway (Recommendation N2)
     sendPushNotification(
       'shop',
       `Nouvelle commande #${newOrder.orderNumber} !`,
@@ -409,7 +407,7 @@ function AppContent() {
       prev.map((o) => (o.id === updated.id ? updated : o))
     );
 
-    syncOrderToFirestore(updated);
+    // Order projection is handled server-side by apiGateway (Recommendation N2)
     sendPushNotification('all', `Commande #${updated.orderNumber}`, note);
 
     // Native background notification to customer with sound and system tray display
@@ -474,7 +472,7 @@ function AppContent() {
         prev.map((o) => (o.id === updated.id ? updated : o))
       );
 
-      syncOrderToFirestore(updated);
+      // Order projection is handled server-side by apiGateway (Recommendation N2)
       sendPushNotification('all', `Commande #${updated.orderNumber}`, note);
 
       const statusTitles: Record<string, string> = {
@@ -543,7 +541,7 @@ function AppContent() {
         setActiveOrder(updated);
       }
 
-      syncOrderToFirestore(updated);
+      // Order projection is handled server-side by apiGateway (Recommendation N2)
       sendPushNotification(
         'customer',
         `Commande #${updated.orderNumber}`,
