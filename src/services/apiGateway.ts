@@ -12,7 +12,11 @@
  * - V6: Ephemeral in-memory store -> PostgreSQL via Prisma
  * 
  * Use `src/services/apiClient.ts` for all server communication.
- * This file is retained as an offline fallback / reference implementation.
+ *
+ * SECURITY: nothing in this file is a security control. It runs in the user's
+ * browser, so any check here can be edited or bypassed by the person using the
+ * app. It exists only to keep local demos and offline UI development working.
+ * Authorization decisions belong to `apps/api` and the Firestore rules.
  */
 
 import {
@@ -126,10 +130,14 @@ class ApiGateway {
   }
 
   /**
-   * RBAC Security Check: validates user session and permissions (H6)
+   * UI affordance check for the local simulation only.
+   *
+   * This is NOT authorization: the caller supplies its own role, so it answers
+   * "which controls should this demo screen show?", never "is this allowed?".
+   * Real enforcement happens server-side in apps/api against a verified token.
    */
   public authorize(session: UserSession, requiredRoles: ('CUSTOMER' | 'MERCHANT' | 'COURIER' | 'ADMIN')[]): boolean {
-    if (!session || !session.token) return false;
+    if (!session) return false;
     return requiredRoles.includes(session.role);
   }
 
@@ -572,4 +580,40 @@ class ApiGateway {
   }
 }
 
-export const apiGateway = new ApiGateway();
+/**
+ * The local simulation is enabled outside production builds, or explicitly with
+ * VITE_ALLOW_LOCAL_SIMULATION=true (e.g. for a staging demo).
+ */
+export function isSimulationEnabled(): boolean {
+  const env = (import.meta as any).env;
+  return !env?.PROD || env?.VITE_ALLOW_LOCAL_SIMULATION === 'true';
+}
+
+const simulatedGateway = new ApiGateway();
+
+/**
+ * In production the simulation must never fabricate offers or orders for real
+ * users. Throwing at import time would take the whole app down (several views
+ * import this module), so instead every call is refused when it is USED:
+ * mutations throw, and subscriptions return an empty stream.
+ */
+export const apiGateway: typeof simulatedGateway = isSimulationEnabled()
+  ? simulatedGateway
+  : new Proxy(simulatedGateway, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function') return value;
+        const name = String(prop);
+        if (name.startsWith('subscribe')) {
+          return () => {
+            console.error(`[apiGateway] ${name}() is a local simulation and is disabled in production.`);
+            return () => {};
+          };
+        }
+        return () => {
+          throw new Error(
+            `[apiGateway] ${name}() is a local simulation and is disabled in production. Use apiClient.`
+          );
+        };
+      },
+    });

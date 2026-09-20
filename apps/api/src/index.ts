@@ -9,9 +9,20 @@ import loyaltyRoutes from './routes/loyalty.js';
 
 const server = fastify({ logger: true });
 
-// Enable CORS
+// CORS restricted to known origins. A wildcard here would let any site on the
+// internet call this API from a logged-in user's browser.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
+  'http://localhost:5173,http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 server.addHook('onRequest', async (request, reply) => {
-  reply.header('Access-Control-Allow-Origin', '*');
+  const origin = request.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    reply.header('Access-Control-Allow-Origin', origin);
+    reply.header('Vary', 'Origin');
+  }
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (request.method === 'OPTIONS') {

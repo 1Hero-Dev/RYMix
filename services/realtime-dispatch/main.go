@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rym/realtime-dispatch/auth"
 	"github.com/rym/realtime-dispatch/dispatch"
 	"github.com/rym/realtime-dispatch/presence"
 	"github.com/rym/realtime-dispatch/telemetry"
@@ -37,6 +38,31 @@ func main() {
 	allowedOrigins := strings.Split(allowedOriginsRaw, ",")
 	for i := range allowedOrigins {
 		allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+	}
+
+	// V7 FIX: courier identity is taken from a verified Firebase ID token,
+	// never from a request body. Without a project id we cannot verify tokens,
+	// so refuse to start rather than fall back to trusting the caller.
+	firebaseProjectID := os.Getenv("FIREBASE_PROJECT_ID")
+	if firebaseProjectID == "" {
+		log.Fatal("FATAL: FIREBASE_PROJECT_ID environment variable is required but not set. Refusing to start.")
+	}
+	tokenVerifier := auth.NewVerifier(firebaseProjectID)
+
+	// requireCourier authenticates the caller and returns their verified claims.
+	requireCourier := func(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {
+		raw, ok := auth.BearerToken(r)
+		if !ok {
+			http.Error(w, "Unauthorized: missing bearer token", http.StatusUnauthorized)
+			return nil, false
+		}
+		claims, err := tokenVerifier.Verify(raw)
+		if err != nil {
+			log.Printf("token verification failed: %v", err)
+			http.Error(w, "Unauthorized: invalid or expired token", http.StatusUnauthorized)
+			return nil, false
+		}
+		return claims, true
 	}
 
 	// 1. Initialize Realtime Subsystems
@@ -106,6 +132,19 @@ func main() {
 
 	// GET /api/v1/couriers - Snapshot of in-memory locations & presence
 	http.HandleFunc("/api/v1/couriers", withCORS(func(w http.ResponseWriter, r *http.Request) {
+		// V7 FIX: the whole fleet's live positions are personal data. Only the
+		// internal backend or a verified ADMIN may read them.
+		if !verifyInternalSecret(r) {
+			claims, ok := requireCourier(w, r)
+			if !ok {
+				return
+			}
+			if claims.Role != "ADMIN" {
+				http.Error(w, "Forbidden: fleet positions require admin privileges", http.StatusForbidden)
+				return
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		locations := locManager.GetAllLocations()
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -123,9 +162,11 @@ func main() {
 			return
 		}
 
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "Unauthorized: missing bearer token", http.StatusUnauthorized)
+		// V7 FIX: verify the token properly. Previously any string starting
+		// with "Bearer " was accepted and courier_id was read from the body,
+		// which let anyone publish GPS for any courier.
+		claims, ok := requireCourier(w, r)
+		if !ok {
 			return
 		}
 
@@ -144,17 +185,25 @@ func main() {
 			return
 		}
 
+		// Identity comes from the verified token, so a spoofed courier_id in the
+		// body is ignored. Reject mismatches outright to surface client bugs.
+		courierID := claims.UID
+		if payload.CourierID != "" && payload.CourierID != courierID {
+			http.Error(w, "Forbidden: courier_id does not match the authenticated courier", http.StatusForbidden)
+			return
+		}
+
 		loc := locManager.UpdateGPS(
-			payload.CourierID,
+			courierID,
 			payload.Lat, payload.Lng,
 			payload.SpeedKmh, payload.Heading,
 			payload.AccuracyMeters, payload.BatteryPct,
 		)
-		presManager.SetHeartbeat(payload.CourierID, payload.ActiveOrders)
+		presManager.SetHeartbeat(courierID, payload.ActiveOrders)
 
 		// Record sample in telemetry store
 		telemetryStore.RecordSample(telemetry.MetricSample{
-			CourierID:   payload.CourierID,
+			CourierID:   courierID,
 			Timestamp:   time.Now(),
 			BatteryPct:  payload.BatteryPct,
 			SpeedKmh:    payload.SpeedKmh,
@@ -242,6 +291,12 @@ func main() {
 
 	// SSE / Streaming Telemetry Endpoint for browsers
 	http.HandleFunc("/api/v1/telemetry/stream", withCORS(func(w http.ResponseWriter, r *http.Request) {
+		// V7/V8 FIX: the event stream carries live courier positions, so it
+		// requires a verified token just like the WebSocket endpoint.
+		if _, ok := requireCourier(w, r); !ok {
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -268,6 +323,78 @@ func main() {
 			}
 		}
 	}))
+
+	// GET /ws - V8 FIX: the WebSocket gateway is now actually served. The hub
+	// was previously created and broadcast to, but no route exposed it, so no
+	// client could ever receive live tracking.
+	//
+	// Tokens are passed via the `access_token` query parameter because browsers
+	// cannot set headers on a WebSocket handshake.
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		rawToken := r.URL.Query().Get("access_token")
+		if rawToken == "" {
+			http.Error(w, "Unauthorized: missing access_token", http.StatusUnauthorized)
+			return
+		}
+		claims, err := tokenVerifier.Verify(rawToken)
+		if err != nil {
+			log.Printf("websocket token verification failed: %v", err)
+			http.Error(w, "Unauthorized: invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		originAllowed := func(origin string) bool {
+			if origin == "" {
+				return true // non-browser client (courier app, server tooling)
+			}
+			for _, o := range allowedOrigins {
+				if o == origin {
+					return true
+				}
+			}
+			return false
+		}
+
+		conn, err := websocket.Upgrade(w, r, originAllowed)
+		if err != nil {
+			log.Printf("websocket upgrade failed for %s: %v", claims.UID, err)
+			return
+		}
+		defer conn.Close()
+
+		clientID := fmt.Sprintf("ws-%s-%d", claims.UID, time.Now().UnixNano())
+		subCh := gatewayHub.Subscribe(clientID)
+		defer gatewayHub.Unsubscribe(clientID)
+
+		log.Printf("websocket connected: uid=%s role=%s", claims.UID, claims.Role)
+
+		// Detect client disconnects without blocking the writer.
+		clientGone := make(chan struct{})
+		go func() {
+			_ = conn.ReadLoop()
+			close(clientGone)
+		}()
+
+		keepalive := time.NewTicker(30 * time.Second)
+		defer keepalive.Stop()
+
+		for {
+			select {
+			case <-clientGone:
+				return
+			case <-r.Context().Done():
+				return
+			case msg := <-subCh:
+				if err := conn.WriteText(msg); err != nil {
+					return
+				}
+			case <-keepalive.C:
+				if err := conn.WritePing(); err != nil {
+					return
+				}
+			}
+		}
+	})
 
 	log.Printf("🚀 RYM Go Real-time Platform running on :%s (Subsystems: websocket, presence, tracking, dispatch, telemetry)", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {

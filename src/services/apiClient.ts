@@ -10,12 +10,18 @@
 
 import { getAuth } from 'firebase/auth';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
+const configuredBase = (import.meta as any).env?.VITE_API_URL as string | undefined;
+const API_BASE = configuredBase || 'http://localhost:3001/api';
 
 /**
  * Authenticated fetch wrapper — automatically attaches the Firebase ID token.
  */
 async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  // A production build without VITE_API_URL would silently call the user's own
+  // localhost:3001. Fail with a clear message instead.
+  if ((import.meta as any).env?.PROD && !configuredBase) {
+    throw new Error('VITE_API_URL is not configured for this production build.');
+  }
   const auth = getAuth();
   const currentUser = auth.currentUser;
   let token: string | null = null;

@@ -82,6 +82,36 @@ export const ORDER_LIFECYCLE_RULES: Record<OrderStatus, TransitionRule> = {
 };
 
 /**
+ * Per-transition permissions.
+ *
+ * ORDER_LIFECYCLE_RULES.authorizedRoles is keyed by the SOURCE status only, so
+ * on its own a role allowed to leave PENDING could pick ANY allowed target from
+ * it: a customer could confirm their own order (skipping the merchant), and a
+ * customer at ARRIVED could mark it DELIVERED, which settles the payment.
+ * This table narrows each non-privileged role to exactly the steps it owns.
+ * ADMIN and SYSTEM keep their root override.
+ */
+const ROLE_TRANSITIONS: Partial<Record<ActorRole, Partial<Record<OrderStatus, OrderStatus[]>>>> = {
+  // A customer confirms receipt only after the courier has marked ARRIVED.
+  CUSTOMER: {
+    ARRIVED: ['CUSTOMER_CONFIRMED'],
+  },
+  MERCHANT: {
+    PENDING: ['CONFIRMED'],
+    CONFIRMED: ['PREPARING'],
+    PREPARING: ['READY'],
+  },
+  COURIER: {
+    READY: ['ASSIGNED', 'PICKED_UP'],
+    ASSIGNED: ['PICKED_UP'],
+    PICKED_UP: ['DELIVERING'],
+    DELIVERING: ['ARRIVED', 'DELIVERED'],
+    ARRIVED: ['DELIVERED'],
+    CUSTOMER_CONFIRMED: ['DELIVERED'],
+  },
+};
+
+/**
  * Validates whether a transition from fromStatus to toStatus is permitted for the given role.
  */
 export function validateOrderTransition(
@@ -110,6 +140,23 @@ export function validateOrderTransition(
     return {
       valid: false,
       reason: `Le rôle '${actorRole}' n'a pas les droits pour passer l'état de '${fromStatus}' à '${toStatus}'.`,
+    };
+  }
+
+  // Cancellation has its own policy (fees, store approval, admin intervention)
+  // in evaluateCancellationPolicy. Allowing it here would bypass that policy.
+  if (toStatus === 'CANCELLED') {
+    return {
+      valid: false,
+      reason: "L'annulation doit passer par la procédure d'annulation dédiée (POST /orders/:id/cancel).",
+    };
+  }
+
+  const permitted = ROLE_TRANSITIONS[actorRole]?.[fromStatus] ?? [];
+  if (!permitted.includes(toStatus)) {
+    return {
+      valid: false,
+      reason: `Le rôle '${actorRole}' ne peut pas effectuer la transition '${fromStatus}' → '${toStatus}'.`,
     };
   }
 

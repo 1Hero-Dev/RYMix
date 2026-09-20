@@ -12,8 +12,8 @@ import { createOrderFulfillmentRecord } from '../domain/fulfillment';
 import { fidelityDB } from '../db/localDatabase';
 import { useLocalDatabase } from '../db/useLocalDatabase';
 import { adminService } from '../services/adminService';
-import { apiGateway } from '../services/apiGateway';
 import { apiClient } from '../services/apiClient';
+import { apiGateway, isSimulationEnabled } from '../services/apiGateway';
 import {
   ArrowLeft,
   MapPin,
@@ -202,17 +202,11 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
     const voucherCodeUsed = selectedVoucher ? selectedVoucher.code : appliedPromo ? appliedPromo.code : undefined;
 
     try {
-      const session = {
-        userId: 'cust-amine',
-        name: deliveryAddress.recipientName || 'Amine B.',
-        role: 'CUSTOMER' as const,
-        token: 'auth-jwt-token-customer',
-      };
-
       let placedOrder: Order;
 
       try {
-        // Phase 1 (V1, V2, V5, V6): Server-Authoritative API submission to Fastify backend
+        // Phase 1 (V1, V2, V5, V6): Server-authoritative submission to the Fastify backend.
+        // Identity comes from the Firebase ID token attached by apiClient — never from the client.
         const apiRes = await apiClient.submitOrder({
           storeId,
           items: cartItems.map((item) => ({
@@ -232,14 +226,36 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
         });
 
         if (apiRes && apiRes.order) {
+          // Build the local view model from the SERVER's figures, not the
+          // client's estimates, so what the user sees matches what was charged.
+          const serverPricing = apiRes.pricing;
+          // Derive the ETA from the same distance estimate shown on this screen:
+          // ~4 min per km riding time plus ~12 min for preparation and pickup.
+          const etaMinutes = Math.round(12 + (estimatedDistanceMeters / 1000) * 4);
+          const etaRange = `${etaMinutes}–${etaMinutes + 8} mins`;
+          const etaClockTime = new Date(Date.now() + etaMinutes * 60000).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
           placedOrder = {
             id: apiRes.order.id,
+            idempotencyKey,
             orderNumber: `AR-${apiRes.order.id.slice(-4).toUpperCase()}`,
             storeId: apiRes.order.storeId,
             storeName,
+            storeCategory: 'Livraison Express Ahmed Rachedi',
+            storeImageUrl: cartItems[0]?.imageUrl || '',
             status: (apiRes.order.status || 'CONFIRMED') as any,
-            total: apiRes.pricing?.finalTotalDZD ?? apiRes.order.totalSnapshot,
-            deliveryFee,
+            subtotal: serverPricing?.itemsSubtotalDZD ?? apiRes.order.subtotalSnapshot ?? subtotal,
+            packagingFee,
+            discount: serverPricing?.discountDZD ?? apiRes.order.discountSnapshot ?? 0,
+            voucherCode: voucherCodeUsed,
+            total: serverPricing?.finalTotalDZD ?? apiRes.order.totalSnapshot,
+            deliveryFee: serverPricing?.deliveryFeeDZD ?? deliveryFee,
+            estimatedDeliveryTimeRange: etaRange,
+            estimatedDeliveryTime: etaClockTime,
+            paymentMethod: 'COD',
+            paymentStatus: 'UNPAID',
             items: cartItems,
             deliveryAddress: {
               ...deliveryAddress,
@@ -251,41 +267,67 @@ export const CheckoutScreen: React.FC<Props> = React.memo(({
             },
             createdAt: 'À l\'instant',
             deliveryNotes,
+            cutleryOption: ecoCutlery,
+            // Same initial timeline the tracking screen expects; the server
+            // remains the source of truth for the actual status.
+            statusTimeline: [
+              { status: 'PENDING', label: 'Envoyée', timestamp: "À l'instant", completed: true, current: true },
+              { status: 'CONFIRMED', label: 'Confirmée', timestamp: '--:--', completed: false, current: false },
+              { status: 'PREPARING', label: 'Préparation', timestamp: '--:--', completed: false, current: false },
+              { status: 'PICKED_UP', label: 'Enlevée', timestamp: '--:--', completed: false, current: false },
+              { status: 'DELIVERING', label: 'En route', timestamp: '--:--', completed: false, current: false },
+              { status: 'ARRIVED', label: 'Arrivée', timestamp: '--:--', completed: false, current: false },
+              { status: 'DELIVERED', label: 'Livrée', timestamp: '--:--', completed: false, current: false },
+            ],
           };
         } else {
           throw new Error('Réponse serveur invalide');
         }
       } catch (apiErr) {
-        console.warn('Fastify API submission failed, fallback to local gateway simulation:', apiErr);
-        // Fallback to legacy client-side simulation
-        const response = await apiGateway.submitCheckout(session, {
-          items: cartItems,
-          storeId,
-          storeName,
-          storeCategory: 'Livraison Express Ahmed Rachedi',
-          storeImageUrl: cartItems[0]?.imageUrl || '',
-          deliveryAddress: {
-            ...deliveryAddress,
-            wilaya: editWilaya,
-            commune: editCommune,
-            street: editStreet,
-            landmark: editLandmark,
-            phone: editPhone,
+        // Only an UNREACHABLE server (fetch rejects with a TypeError) may fall
+        // back to the local simulation, and only where simulation is enabled.
+        // An HTTP error means the server answered and said no (bad token,
+        // tampered price, closed store). That verdict is never overridden
+        // locally, in any environment.
+        const serverUnreachable = apiErr instanceof TypeError;
+        if (!(serverUnreachable && isSimulationEnabled())) throw apiErr;
+
+        console.warn('[dev] API server unreachable, using the local order simulation:', apiErr);
+        const response = await apiGateway.submitCheckout(
+          {
+            userId: 'cust-amine',
+            name: deliveryAddress.recipientName || 'Amine B.',
+            role: 'CUSTOMER',
+            token: '',
           },
-          deliveryNotes,
-          cutleryOption: ecoCutlery,
-          voucherCode: voucherCodeUsed,
-          paymentMethod: 'COD',
-          idempotencyKey,
-        });
+          {
+            items: cartItems,
+            storeId,
+            storeName,
+            storeCategory: 'Livraison Express Ahmed Rachedi',
+            storeImageUrl: cartItems[0]?.imageUrl || '',
+            deliveryAddress: {
+              ...deliveryAddress,
+              wilaya: editWilaya,
+              commune: editCommune,
+              street: editStreet,
+              landmark: editLandmark,
+              phone: editPhone,
+            },
+            deliveryNotes,
+            cutleryOption: ecoCutlery,
+            voucherCode: voucherCodeUsed,
+            paymentMethod: 'COD',
+            idempotencyKey,
+          }
+        );
 
         if (!response.success || !response.order) {
           setIsSubmitting(false);
-          setOrderPlacementError(response.error || 'Erreur lors de la validation serveur de la commande.');
+          setOrderPlacementError(response.error || 'Erreur lors de la validation de la commande.');
           setShowConfirmationReview(false);
           return;
         }
-
         placedOrder = response.order;
       }
 

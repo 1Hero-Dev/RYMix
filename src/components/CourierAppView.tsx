@@ -10,6 +10,17 @@ import { uploadProofOfDelivery, updateDriverLocation } from '../firebase/firebas
 import { convertToWebP } from '../utils/webpConverter';
 import { LazyImage } from './common/LazyImage';
 import { apiGateway, DeliveryJobOffer } from '../services/apiGateway';
+
+/**
+ * Identity used for the in-browser demo gateway only.
+ * Not credentials: the server never sees or trusts this.
+ */
+const SIMULATED_COURIER = {
+  userId: 'courier-walid-43',
+  name: 'Walid M.',
+  role: 'COURIER' as const,
+  token: '',
+};
 import {
   Bike,
   Power,
@@ -84,13 +95,10 @@ export const CourierAppView: React.FC<Props> = ({
   }, []);
 
   const handleAcceptLiveOffer = (offer: DeliveryJobOffer) => {
-    const session = {
-      userId: 'courier-walid-43',
-      name: 'Walid M.',
-      role: 'COURIER' as const,
-      token: 'jwt-courier-token-walid',
-    };
-    const res = apiGateway.courierAcceptOffer(session, offer.offerId);
+    // Local demo identity. Carries no token: the in-browser gateway is a
+    // simulation, not an authenticated channel. Real courier actions must go
+    // through apiClient, which attaches a verified Firebase ID token.
+    const res = apiGateway.courierAcceptOffer(SIMULATED_COURIER, offer.offerId);
     if (res.success) {
       setTodayEarnings((prev) => prev + offer.courierFeeDZD);
       setBundleAlertToast(`✅ Mission #${offer.orderNumber} acceptée ! Rémunération : +${offer.courierFeeDZD} DZD.`);
@@ -100,13 +108,7 @@ export const CourierAppView: React.FC<Props> = ({
   };
 
   const handleDeclineLiveOffer = (offerId: string) => {
-    const session = {
-      userId: 'courier-walid-43',
-      name: 'Walid M.',
-      role: 'COURIER' as const,
-      token: 'jwt-courier-token-walid',
-    };
-    apiGateway.courierDeclineOffer(session, offerId);
+    apiGateway.courierDeclineOffer(SIMULATED_COURIER, offerId);
     setBundleAlertToast(`Offre déclinée.`);
     setTimeout(() => setBundleAlertToast(null), 3000);
   };

@@ -6,6 +6,17 @@ import { useLocalDatabase } from '../db/useLocalDatabase';
 import { merchantRatingsDB } from '../db/localDatabase';
 import { LazyImage } from './common/LazyImage';
 import { apiGateway } from '../services/apiGateway';
+
+/**
+ * Identity used for the in-browser demo gateway only.
+ * Not credentials: the server never sees or trusts this.
+ */
+const SIMULATED_MERCHANT = {
+  userId: 'merchant-beni-haroun',
+  name: 'Chef Beni Haroun',
+  role: 'MERCHANT' as const,
+  token: '',
+};
 import {
   ChefHat,
   Printer,
@@ -180,13 +191,9 @@ export const MerchantAppView: React.FC<Props> = ({
       prev.map((item) => {
         if (item.id === itemId) {
           const nextState = !item.isAvailable;
-          const session = {
-            userId: 'merchant-beni-haroun',
-            name: 'Chef Beni Haroun',
-            role: 'MERCHANT' as const,
-            token: 'jwt-merchant-token',
-          };
-          apiGateway.updateStoreItemAvailability(session, 'store-beni-haroun', itemId, nextState);
+          // Local demo only; real availability changes must be persisted
+          // server-side against the merchant's verified store membership.
+          apiGateway.updateStoreItemAvailability(SIMULATED_MERCHANT, 'store-beni-haroun', itemId, nextState);
           return { ...item, isAvailable: nextState };
         }
         return item;

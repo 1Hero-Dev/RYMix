@@ -23,7 +23,8 @@ enum Role {
 
 model User {
   id           String   @id @default(uuid())
-  phone        String   @unique
+  // Optional: accounts are provisioned from Firebase on first request and may have no phone.
+  phone        String?  @unique
   passwordHash String?
   name         String?
   role         Role     @default(CUSTOMER)
@@ -167,6 +168,8 @@ enum OrderStatus {
   ASSIGNED
   PICKED_UP
   DELIVERING
+  ARRIVED
+  CUSTOMER_CONFIRMED
   DELIVERED
   CANCELLED
 }

@@ -69,6 +69,49 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     reply.code(401).send({ error: 'Unauthorized: invalid or expired token' });
     return;
   }
+
+  // Orders, deliveries and loyalty accounts hold foreign keys to User.id, and
+  // nothing else creates users. Without this, the first order from any real
+  // account fails with a foreign-key violation.
+  try {
+    await ensureUserProvisioned(request.server, request.user);
+  } catch (err) {
+    request.log.error({ err }, 'User provisioning failed');
+    reply.code(503).send({ error: 'Service temporarily unavailable' });
+    return;
+  }
+}
+
+/** Firebase role -> database role. The Firebase claim stays the source of truth. */
+const DB_ROLE = {
+  CUSTOMER: 'CUSTOMER',
+  COURIER: 'COURIER',
+  MERCHANT: 'MERCHANT_STAFF',
+  ADMIN: 'ADMIN_OPERATIONS',
+} as const;
+
+// Avoid a database write on every request: provision once per uid per process.
+const provisionedUids = new Set<string>();
+
+/**
+ * Ensures a User row exists for the authenticated Firebase account. Never
+ * overwrites an existing row, so roles assigned by an administrator survive.
+ */
+export async function ensureUserProvisioned(fastify: FastifyInstance, user: AuthUser): Promise<void> {
+  if (provisionedUids.has(user.uid)) return;
+  try {
+    await fastify.prisma.user.upsert({
+      where: { id: user.uid },
+      update: {},
+      create: { id: user.uid, role: DB_ROLE[user.role] },
+    });
+  } catch (err) {
+    // Two concurrent first requests can both try to insert; the loser hits the
+    // unique constraint, which only means the row now exists.
+    if ((err as { code?: string }).code !== 'P2002') throw err;
+  }
+  if (provisionedUids.size > 50_000) provisionedUids.clear();
+  provisionedUids.add(user.uid);
 }
 
 /**
@@ -89,7 +132,7 @@ export function requireRole(...roles: AuthUser['role'][]) {
 
 export default fp(async (fastify: FastifyInstance) => {
   // Decorate request with user property (null by default)
-  fastify.decorateRequest('user', null);
+  fastify.decorateRequest('user', null as never);
   
   fastify.log.info('Firebase Auth plugin registered');
 });

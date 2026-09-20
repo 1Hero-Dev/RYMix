@@ -1,3 +1,12 @@
+// =============================================================================
+// DEPRECATED - DO NOT USE.
+// This schema has diverged from the live one (apps/api/prisma/schema.prisma):
+// different enums (PLACED / KITCHEN_PREP / COURIER_ASSIGNED here, versus
+// PENDING / PREPARING / ASSIGNED there) and different models. Running
+// `prisma migrate` or `prisma db push` from this file would create a database
+// the API cannot use. Kept only for reference; safe to delete.
+// =============================================================================
+
 // Prisma Schema for RYM SuperApp (Wilaya de Mila 43 - Ahmed Rachedi)
 // Architecture: Fastify + TypeScript + Prisma + PostgreSQL
 // Real-time Service: Lightweight Go WebSocket/SSE Daemon for GPS Telemetry

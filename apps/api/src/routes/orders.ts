@@ -15,6 +15,48 @@ import { authenticate, requireRole } from '../plugins/firebase-auth.js';
 import { calculateAuthoritativePrice } from '../domain/pricingEngine.js';
 import { validateOrderTransition, evaluateCancellationPolicy, type ActorRole, type OrderStatus } from '../domain/orderLifecycle.js';
 
+/**
+ * Object-level authorization guard.
+ *
+ * Role checks answer "what kind of user is this?"; this answers "is this user a
+ * party to THIS order?". Both are required. A COURIER may claim an unassigned
+ * delivery, but may never act on one assigned to someone else.
+ */
+class ClaimConflictError extends Error {}
+
+async function isPartyToOrder(
+  fastify: FastifyInstance,
+  user: { uid: string; role: string },
+  order: { customerId: string; storeId: string; delivery?: { courierId: string | null } | null }
+): Promise<{ ok: boolean; reason?: string }> {
+  if (user.role === 'ADMIN') return { ok: true };
+
+  if (user.role === 'CUSTOMER') {
+    return order.customerId === user.uid
+      ? { ok: true }
+      : { ok: false, reason: 'Forbidden: this order belongs to another customer' };
+  }
+
+  if (user.role === 'COURIER') {
+    const assignedTo = order.delivery?.courierId ?? null;
+    // Unassigned deliveries may be claimed; assigned ones are exclusive.
+    if (assignedTo === null || assignedTo === user.uid) return { ok: true };
+    return { ok: false, reason: 'Forbidden: this delivery is assigned to another courier' };
+  }
+
+  if (user.role === 'MERCHANT') {
+    const membership = await fastify.prisma.storeMembership.findFirst({
+      where: { userId: user.uid, storeId: order.storeId },
+      select: { id: true },
+    });
+    return membership
+      ? { ok: true }
+      : { ok: false, reason: 'Forbidden: you do not operate the store on this order' };
+  }
+
+  return { ok: false, reason: 'Forbidden: unrecognised role' };
+}
+
 export default async function (fastify: FastifyInstance) {
 
   // =========================================================================
@@ -197,12 +239,9 @@ export default async function (fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Order not found' });
     }
 
-    // Access control: customer owns it, courier is assigned, or admin
-    if (
-      user.role !== 'ADMIN' &&
-      order.customerId !== user.uid &&
-      order.delivery?.courierId !== user.uid
-    ) {
+    // Access control: customer owns it, assigned courier, operating merchant, or admin.
+    const readable = await isPartyToOrder(fastify, user, order);
+    if (!readable.ok) {
       return reply.code(403).send({ error: 'Forbidden: you do not have access to this order' });
     }
 
@@ -236,6 +275,14 @@ export default async function (fastify: FastifyInstance) {
     const actorRole: ActorRole = user.role as ActorRole;
     const currentStatus = order.status as OrderStatus;
 
+    // Object-level authorization: having the right ROLE is not enough, the caller
+    // must also be a party to THIS order. Without this, any signed-in merchant
+    // could advance any store's orders and any courier could hijack a delivery.
+    const authorized = await isPartyToOrder(fastify, user, order);
+    if (!authorized.ok) {
+      return reply.code(403).send({ error: authorized.reason });
+    }
+
     // Validate the transition using the lifecycle state machine
     const validation = validateOrderTransition(currentStatus, targetStatus, actorRole);
     if (!validation.valid) {
@@ -244,6 +291,30 @@ export default async function (fastify: FastifyInstance) {
 
     // Execute the transition in a transaction
     const updated = await fastify.prisma.$transaction(async (tx) => {
+      // Delivery bookkeeping runs BEFORE the order update so the returned order
+      // reflects it. Previously courierId and assignedAt were never written, so
+      // a claimed delivery still looked unassigned and a second courier could
+      // act on it too.
+      if (order.delivery) {
+        if (user.role === 'COURIER' && (targetStatus === 'ASSIGNED' || targetStatus === 'PICKED_UP')) {
+          // Atomic claim: succeeds only if unassigned or already ours, so two
+          // couriers racing for one delivery cannot both win.
+          const claimed = await tx.delivery.updateMany({
+            where: { id: order.delivery.id, OR: [{ courierId: null }, { courierId: user.uid }] },
+            data: { courierId: user.uid, assignedAt: order.delivery.assignedAt ?? new Date() },
+          });
+          if (claimed.count === 0) {
+            throw new ClaimConflictError("Cette livraison vient d'être prise par un autre livreur.");
+          }
+        }
+        if (targetStatus === 'PICKED_UP') {
+          await tx.delivery.update({ where: { id: order.delivery.id }, data: { pickedUpAt: new Date() } });
+        }
+        if (targetStatus === 'DELIVERED') {
+          await tx.delivery.update({ where: { id: order.delivery.id }, data: { deliveredAt: new Date() } });
+        }
+      }
+
       const updatedOrder = await tx.order.update({
         where: { id },
         data: {
@@ -262,28 +333,6 @@ export default async function (fastify: FastifyInstance) {
         },
       });
 
-      // Update delivery status if applicable
-      if (order.delivery) {
-        const deliveryStatusMap: Partial<Record<OrderStatus, string>> = {
-          READY: 'READY',
-          ASSIGNED: 'ASSIGNED',
-          PICKED_UP: 'PICKED_UP',
-          DELIVERING: 'EN_ROUTE',
-          DELIVERED: 'DELIVERED',
-          CANCELLED: 'CANCELLED',
-        };
-        const newDeliveryStatus = deliveryStatusMap[targetStatus];
-        if (newDeliveryStatus) {
-          await tx.delivery.update({
-            where: { id: order.delivery.id },
-            data: {
-              ...(targetStatus === 'PICKED_UP' ? { pickedUpAt: new Date() } : {}),
-              ...(targetStatus === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
-            },
-          });
-        }
-      }
-
       // Update payment status on delivery
       if (targetStatus === 'DELIVERED') {
         await tx.payment.updateMany({
@@ -293,7 +342,14 @@ export default async function (fastify: FastifyInstance) {
       }
 
       return updatedOrder;
+    }).catch((err: unknown) => {
+      if (err instanceof ClaimConflictError) return err;
+      throw err;
     });
+
+    if (updated instanceof ClaimConflictError) {
+      return reply.code(409).send({ error: updated.message });
+    }
 
     return { success: true, order: updated };
   });
@@ -308,10 +364,19 @@ export default async function (fastify: FastifyInstance) {
     const user = request.user;
     const { reason } = request.body as { reason?: string };
 
-    const order = await fastify.prisma.order.findUnique({ where: { id } });
+    const order = await fastify.prisma.order.findUnique({
+      where: { id },
+      include: { delivery: true },
+    });
 
     if (!order) {
       return reply.code(404).send({ error: 'Order not found' });
+    }
+
+    // Object-level authorization: only a party to this order may cancel it.
+    const authorized = await isPartyToOrder(fastify, user, order);
+    if (!authorized.ok) {
+      return reply.code(403).send({ error: authorized.reason });
     }
 
     // Check cancellation policy
