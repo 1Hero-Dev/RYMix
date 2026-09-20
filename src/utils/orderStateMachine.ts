@@ -50,7 +50,7 @@ export function getNextSimulatedStatus(current: OrderStatus): OrderStatus | null
     case 'CONFIRMED':
       return 'PREPARING';
     case 'PREPARING':
-      return 'PICKED_UP';
+      return 'READY';
     case 'READY':
       return 'PICKED_UP';
     case 'ASSIGNED':

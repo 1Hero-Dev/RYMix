@@ -367,9 +367,28 @@ function AppContent() {
 
   // Courier Actions
   const handleAcceptPoolOrder = useCallback((poolId: string) => {
-    setCourierPool((prev) =>
-      prev.map((item) => (item.id === poolId ? { ...item, status: 'claimed' } : item))
-    );
+    setCourierPool((prev) => {
+      const updatedPool = prev.map((item) => (item.id === poolId ? { ...item, status: 'claimed' as const } : item));
+      const targetMission = prev.find((item) => item.id === poolId);
+      
+      setActiveOrder((curr) => {
+        if (!curr) return curr;
+        if (!targetMission || targetMission.orderNumber === curr.orderNumber || !curr.courierName) {
+          const updated: Order = {
+            ...curr,
+            courierName: curr.courierName || 'Walid M. (Livreur)',
+            courierPhone: curr.courierPhone || '0550 12 34 56',
+            status: curr.status === 'READY' ? 'ASSIGNED' : curr.status,
+          };
+          setMerchantOrders((mPrev) => mPrev.map((o) => (o.id === updated.id ? updated : o)));
+          setPastOrders((pPrev) => pPrev.map((o) => (o.id === updated.id ? updated : o)));
+          return updated;
+        }
+        return curr;
+      });
+
+      return updatedPool;
+    });
     triggerToast('Mission acceptée ! Rendez-vous au restaurant pour le retrait.');
   }, [triggerToast]);
 

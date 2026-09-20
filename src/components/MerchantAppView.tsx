@@ -484,7 +484,7 @@ export const MerchantAppView: React.FC<Props> = ({
 
                     {ord.status === 'READY' && (
                       <button
-                        onClick={() => onUpdateOrderStatus(ord.id, 'DELIVERING')}
+                        onClick={() => onUpdateOrderStatus(ord.id, 'PICKED_UP')}
                         className="flex-1 bg-[#D9943B] hover:bg-[#E5A34C] active:scale-[0.98] text-[#071E26] text-xs font-extrabold py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                       >
                         <CheckCircle2 size={15} />
